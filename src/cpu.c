@@ -1,4 +1,3 @@
-/* cpu.c — fetch-decode-execute core. */
 #include "cpu.h"
 #include "isa.h"
 
@@ -9,14 +8,13 @@ void cpu_init(CPU *cpu, Memory *mem) {
         cpu->regs[i] = 0;
     }
     cpu->pc = 0;
-    cpu->sp = MEM_SIZE;   /* stack grows downward from the top of memory */
+    cpu->sp = MEM_SIZE;
     cpu->flags.z = cpu->flags.c = cpu->flags.o = cpu->flags.n = 0;
     cpu->mem = mem;
     cpu->halted = 0;
+    cpu->icount = 0;
 }
 
-/* Set zero/negative flags from a result word. Carry/overflow are set by the
- * individual arithmetic ops that can produce them. */
 static void set_zn(CPU *cpu, uint32_t result) {
     cpu->flags.z = (result == 0);
     cpu->flags.n = (result >> 31) & 1;
@@ -29,7 +27,6 @@ static void exec_add(CPU *cpu, Instruction ins) {
     uint32_t r = (uint32_t)wide;
     cpu->regs[ins.rdest] = r;
     cpu->flags.c = (wide >> 32) & 1;
-    /* signed overflow: operands same sign, result differs */
     cpu->flags.o = (~(a ^ b) & (a ^ r)) >> 31;
     set_zn(cpu, r);
 }
@@ -39,8 +36,8 @@ static void exec_sub(CPU *cpu, Instruction ins) {
     uint32_t b = cpu->regs[ins.rsrc];
     uint32_t r = a - b;
     cpu->regs[ins.rdest] = r;
-    cpu->flags.c = (a < b);                       /* borrow */
-    cpu->flags.o = ((a ^ b) & (a ^ r)) >> 31;     /* signed overflow */
+    cpu->flags.c = (a < b);
+    cpu->flags.o = ((a ^ b) & (a ^ r)) >> 31;
     set_zn(cpu, r);
 }
 
@@ -53,6 +50,7 @@ void cpu_step(CPU *cpu) {
         .imm    = DECODE_IMM(raw)
     };
     cpu->pc += 4;
+    cpu->icount++;
 
     switch (ins.opcode) {
         case OP_NOP:

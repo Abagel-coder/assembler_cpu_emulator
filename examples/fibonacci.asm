@@ -1,15 +1,14 @@
-; fibonacci.asm — advance 10 steps of the Fibonacci sequence.
-; Leaves fib(10) = 55 in R0, then prints it.
-        LOADI R0, 0        ; a
-        LOADI R1, 1        ; b
-        LOADI R2, 10       ; counter
-        LOADI R3, 1        ; decrement step
+; Advance 10 Fibonacci steps; leaves fib(10) = 55 in R0 and prints it.
+        LOADI R0, 0
+        LOADI R1, 1
+        LOADI R2, 10
+        LOADI R3, 1
 loop:
-        MOV   R4, R0       ; tmp = a
-        ADD   R4, R1       ; tmp = a + b
-        MOV   R0, R1       ; a = b
-        MOV   R1, R4       ; b = tmp
-        SUB   R2, R3       ; counter--
+        MOV   R4, R0
+        ADD   R4, R1
+        MOV   R0, R1
+        MOV   R1, R4
+        SUB   R2, R3
         JNZ   loop
-        OUT   R0           ; prints 55
+        OUT   R0
         HALT

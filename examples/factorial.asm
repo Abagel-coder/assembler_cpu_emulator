@@ -1,10 +1,10 @@
-; factorial.asm — compute 5! = 120 into R0, then print it.
-        LOADI R0, 1        ; result
-        LOADI R1, 5        ; n
-        LOADI R2, 1        ; decrement step
+; Compute 5! = 120 in R0 and print it.
+        LOADI R0, 1
+        LOADI R1, 5
+        LOADI R2, 1
 loop:
-        MUL   R0, R1       ; result *= n
-        SUB   R1, R2       ; n--
+        MUL   R0, R1
+        SUB   R1, R2
         JNZ   loop
-        OUT   R0           ; prints 120
+        OUT   R0
         HALT

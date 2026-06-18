@@ -38,7 +38,7 @@ Token *lex(const char *src, size_t *out_count) {
             line++; p++;
             continue;
         }
-        if (*p == ';') {                     /* comment to end of line */
+        if (*p == ';') {
             while (*p && *p != '\n') p++;
             continue;
         }
@@ -57,13 +57,13 @@ Token *lex(const char *src, size_t *out_count) {
 
         if (isdigit((unsigned char)*p)) {
             char *end;
-            long val = strtol(p, &end, 0);   /* base 0: handles 0x and decimal */
+            long val = strtol(p, &end, 0);   /* base 0 handles 0x and decimal */
             push(&v, (Token){ .type = T_NUM, .num = val, .line = line });
             p = end;
             continue;
         }
 
-        if (*p == '.') {                     /* directive: .org .word */
+        if (*p == '.') {
             Token t = { .type = T_DIRECTIVE, .line = line };
             size_t i = 0; p++;
             while (isalnum((unsigned char)*p) && i < sizeof t.text - 1) t.text[i++] = *p++;

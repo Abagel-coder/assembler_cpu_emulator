@@ -9,7 +9,7 @@ ASM_SRC  := src/lexer.c src/parser.c src/encoder.c src/isa.c
 
 .PHONY: all test clean
 
-all: $(BUILD)/emu $(BUILD)/asm
+all: $(BUILD)/emu $(BUILD)/asm $(BUILD)/disasm $(BUILD)/pipe
 
 $(BUILD)/emu: src/main_emu.c $(CORE_SRC) | $(BUILD)
 	$(CC) $(CFLAGS) $^ -o $@
@@ -17,13 +17,21 @@ $(BUILD)/emu: src/main_emu.c $(CORE_SRC) | $(BUILD)
 $(BUILD)/asm: src/main_asm.c $(ASM_SRC) | $(BUILD)
 	$(CC) $(CFLAGS) $^ -o $@
 
+$(BUILD)/disasm: src/disasm.c src/isa.c | $(BUILD)
+	$(CC) $(CFLAGS) $^ -o $@
+
+$(BUILD)/pipe: src/pipeline.c $(CORE_SRC) | $(BUILD)
+	$(CC) $(CFLAGS) $^ -o $@
+
 $(BUILD):
 	mkdir -p $(BUILD)
 
-test: $(BUILD)/test_cpu_core $(BUILD)/test_assembler $(BUILD)/test_integration
+test: $(BUILD)/test_cpu_core $(BUILD)/test_assembler $(BUILD)/test_integration \
+      $(BUILD)/asm $(BUILD)/disasm
 	./$(BUILD)/test_cpu_core
 	./$(BUILD)/test_assembler
 	./$(BUILD)/test_integration
+	sh tests/roundtrip.sh
 
 $(BUILD)/test_cpu_core: tests/test_cpu_core.c $(CORE_SRC) | $(BUILD)
 	$(CC) $(CFLAGS) $^ -o $@

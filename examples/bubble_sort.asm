@@ -1,39 +1,33 @@
-; bubble_sort.asm — sort a 5-element array in memory ascending, then print it.
-; Demonstrates memory access, nested loops, and signed comparison branches.
-;
-; Register usage:
-;   R0 = 1 (decrement)      R1 = 4 (element stride)   R2 = outer counter
-;   R3 = element pointer     R4 = inner counter        R5 = x, R6 = y, R7 = x-y
-
+; Bubble-sort a 5-element array in memory ascending, then print it.
+; R0=1 R1=4(stride) R2=outer R3=ptr R4=inner R5=x R6=y R7=x-y
         LOADI R0, 1
         LOADI R1, 4
         LOADI R2, 5
-        SUB   R2, R0        ; outer = N - 1 = 4
+        SUB   R2, R0
 
 outer:
-        LOADI R3, arr       ; pointer to arr[0]
-        MOV   R4, R2        ; inner count = outer
+        LOADI R3, arr
+        MOV   R4, R2
 
 inner:
-        LOAD  R5, [R3+0]    ; x = arr[j]
-        LOAD  R6, [R3+4]    ; y = arr[j+1]
+        LOAD  R5, [R3+0]
+        LOAD  R6, [R3+4]
         MOV   R7, R5
-        SUB   R7, R6        ; x - y  (sets flags)
-        JG    doswap        ; if x > y, swap
+        SUB   R7, R6
+        JG    doswap
         JMP   skip
 
 doswap:
-        STORE [R3+0], R6    ; arr[j]   = y
-        STORE [R3+4], R5    ; arr[j+1] = x
+        STORE [R3+0], R6
+        STORE [R3+4], R5
 
 skip:
-        ADD   R3, R1        ; advance pointer
-        SUB   R4, R0        ; inner--
+        ADD   R3, R1
+        SUB   R4, R0
         JNZ   inner
-        SUB   R2, R0        ; outer--
+        SUB   R2, R0
         JNZ   outer
 
-        ; print the sorted array
         LOADI R3, arr
         LOADI R4, 5
 print:

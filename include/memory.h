@@ -1,13 +1,10 @@
-/* memory.h — flat 64KB byte-addressable memory with word helpers.
- *
- * Words are stored little-endian. All addresses are byte addresses.
- */
+/* Flat 64KB byte-addressable memory; words are little-endian. */
 #ifndef MEMORY_H
 #define MEMORY_H
 
 #include <stdint.h>
 
-#define MEM_SIZE (1 << 16)   /* 64KB */
+#define MEM_SIZE (1 << 16)
 
 typedef struct {
     uint8_t bytes[MEM_SIZE];

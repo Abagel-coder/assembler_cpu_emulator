@@ -32,3 +32,27 @@ const char *opcode_name(Opcode op) {
         default:       return "???";
     }
 }
+
+OpFormat opcode_format(Opcode op) {
+    switch (op) {
+        case OP_NOP: case OP_HALT: case OP_RET:
+            return OPF_NONE;
+        case OP_ADD: case OP_SUB: case OP_MUL: case OP_DIV:
+        case OP_AND: case OP_OR:  case OP_XOR: case OP_SHL:
+        case OP_SHR: case OP_MOV:
+            return OPF_RD_RS;
+        case OP_NOT: case OP_PUSH: case OP_POP: case OP_IN: case OP_OUT:
+            return OPF_RD;
+        case OP_LOADI:
+            return OPF_RD_IMM;
+        case OP_LOAD:
+            return OPF_RD_MEM;
+        case OP_STORE:
+            return OPF_MEM_RS;
+        case OP_JMP: case OP_JZ: case OP_JNZ:
+        case OP_JG:  case OP_JL: case OP_CALL:
+            return OPF_IMM;
+        default:
+            return OPF_NONE;
+    }
+}

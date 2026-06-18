@@ -1,13 +1,9 @@
-/* isa.h — Instruction Set Architecture definition.
- *
- * This header is the contract shared between the emulator and the assembler.
- * Instruction format (32-bit fixed width):
- *
- *  31        26 25     23 22     20 19                   0
- * +-----------+---------+---------+----------------------+
- * |  opcode   |  rdest  |  rsrc   |   immediate / offset |
- * |  6 bits   | 3 bits  | 3 bits  |        20 bits       |
- * +-----------+---------+---------+----------------------+
+/* 32-bit instruction layout:
+ *  31     26 25  23 22  20 19                0
+ * +--------+------+------+-------------------+
+ * | opcode | rdest| rsrc | immediate / offset|
+ * |   6    |  3   |  3   |        20         |
+ * +--------+------+------+-------------------+
  */
 #ifndef ISA_H
 #define ISA_H
@@ -24,10 +20,10 @@ typedef enum {
 } Opcode;
 
 typedef struct {
-    Opcode  opcode;   /* bits 31-26 */
-    uint8_t rdest;    /* bits 25-23 */
-    uint8_t rsrc;     /* bits 22-20 */
-    int32_t imm;      /* bits 19-0, sign-extended */
+    Opcode  opcode;
+    uint8_t rdest;
+    uint8_t rsrc;
+    int32_t imm;
 } Instruction;
 
 #define OPCODE_MASK   0xFC000000u
@@ -36,13 +32,12 @@ typedef struct {
 #define IMM_MASK      0x000FFFFFu
 
 #define IMM_BITS      20
-#define IMM_SIGN_BIT  0x00080000u   /* bit 19 */
+#define IMM_SIGN_BIT  0x00080000u
 
-/* Sign-extend a 20-bit two's-complement value to a full int32_t. */
 static inline int32_t sign_extend20(uint32_t v) {
     v &= IMM_MASK;
     if (v & IMM_SIGN_BIT) {
-        v |= ~IMM_MASK;   /* set the upper 12 bits */
+        v |= ~IMM_MASK;
     }
     return (int32_t)v;
 }
@@ -56,6 +51,11 @@ static inline int32_t sign_extend20(uint32_t v) {
     (((uint32_t)(op) << 26) | ((uint32_t)(rd) << 23) | \
      ((uint32_t)(rs) << 20) | ((uint32_t)(imm) & IMM_MASK))
 
+typedef enum {
+    OPF_NONE, OPF_RD_RS, OPF_RD, OPF_RD_IMM, OPF_RD_MEM, OPF_MEM_RS, OPF_IMM
+} OpFormat;
+
 const char *opcode_name(Opcode op);
+OpFormat    opcode_format(Opcode op);
 
 #endif /* ISA_H */

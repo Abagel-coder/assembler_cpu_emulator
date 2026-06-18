@@ -24,17 +24,17 @@ typedef struct {
     StmtType type;
     int      line;
 
-    char     name[64];      /* ST_LABEL */
+    char     name[64];       /* ST_LABEL */
 
-    Opcode   op;            /* ST_INSTR */
+    Opcode   op;             /* ST_INSTR */
     uint8_t  rdest, rsrc;
     int32_t  imm;
-    char     imm_label[64]; /* non-empty if the immediate is a label */
+    char     imm_label[64];  /* set when the immediate is a label */
 
-    uint32_t value;         /* ST_ORG address / ST_WORD literal value */
-    char     word_label[64];/* ST_WORD referencing a label */
+    uint32_t value;          /* ST_ORG / ST_WORD */
+    char     word_label[64];
 
-    uint32_t address;       /* assigned in pass 1 */
+    uint32_t address;        /* assigned in pass 1 */
 } Stmt;
 
 typedef struct {

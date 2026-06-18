@@ -1,4 +1,3 @@
-/* cpu.h — register file, flags, and the fetch-decode-execute interface. */
 #ifndef CPU_H
 #define CPU_H
 
@@ -14,10 +13,11 @@ typedef struct {
     struct { uint8_t z, c, o, n; } flags;   /* zero, carry, overflow, negative */
     Memory  *mem;
     int      halted;
+    uint64_t icount;
 } CPU;
 
 void cpu_init(CPU *cpu, Memory *mem);
-void cpu_step(CPU *cpu);              /* one fetch-decode-execute cycle */
-void cpu_run(CPU *cpu, int trace);   /* loop until halted */
+void cpu_step(CPU *cpu);
+void cpu_run(CPU *cpu, int trace);
 
 #endif /* CPU_H */

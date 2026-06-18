@@ -5,29 +5,24 @@
 #include <string.h>
 #include <strings.h>
 
-typedef enum {
-    F_NONE, F_RD_RS, F_RD, F_RD_IMM, F_RD_MEM, F_MEM_RS, F_IMM
-} OpFormat;
-
 typedef struct {
     const char *name;
     Opcode      op;
-    OpFormat    fmt;
 } MnemEntry;
 
 static const MnemEntry MNEMONICS[] = {
-    { "NOP", OP_NOP, F_NONE }, { "HALT", OP_HALT, F_NONE }, { "RET", OP_RET, F_NONE },
-    { "ADD", OP_ADD, F_RD_RS }, { "SUB", OP_SUB, F_RD_RS }, { "MUL", OP_MUL, F_RD_RS },
-    { "DIV", OP_DIV, F_RD_RS }, { "AND", OP_AND, F_RD_RS }, { "OR",  OP_OR,  F_RD_RS },
-    { "XOR", OP_XOR, F_RD_RS }, { "SHL", OP_SHL, F_RD_RS }, { "SHR", OP_SHR, F_RD_RS },
-    { "MOV", OP_MOV, F_RD_RS },
-    { "NOT", OP_NOT, F_RD }, { "PUSH", OP_PUSH, F_RD }, { "POP", OP_POP, F_RD },
-    { "IN",  OP_IN,  F_RD }, { "OUT", OP_OUT, F_RD },
-    { "LOADI", OP_LOADI, F_RD_IMM },
-    { "LOAD",  OP_LOAD,  F_RD_MEM },
-    { "STORE", OP_STORE, F_MEM_RS },
-    { "JMP", OP_JMP, F_IMM }, { "JZ", OP_JZ, F_IMM }, { "JNZ", OP_JNZ, F_IMM },
-    { "JG",  OP_JG,  F_IMM }, { "JL", OP_JL, F_IMM }, { "CALL", OP_CALL, F_IMM },
+    { "NOP", OP_NOP }, { "HALT", OP_HALT }, { "RET", OP_RET },
+    { "ADD", OP_ADD }, { "SUB", OP_SUB }, { "MUL", OP_MUL },
+    { "DIV", OP_DIV }, { "AND", OP_AND }, { "OR",  OP_OR },
+    { "XOR", OP_XOR }, { "SHL", OP_SHL }, { "SHR", OP_SHR },
+    { "MOV", OP_MOV },
+    { "NOT", OP_NOT }, { "PUSH", OP_PUSH }, { "POP", OP_POP },
+    { "IN",  OP_IN }, { "OUT", OP_OUT },
+    { "LOADI", OP_LOADI },
+    { "LOAD",  OP_LOAD },
+    { "STORE", OP_STORE },
+    { "JMP", OP_JMP }, { "JZ", OP_JZ }, { "JNZ", OP_JNZ },
+    { "JG",  OP_JG }, { "JL", OP_JL }, { "CALL", OP_CALL },
 };
 
 static const MnemEntry *find_mnem(const char *name) {
@@ -71,7 +66,6 @@ static int expect(P *p, TokType tt, const char *what) {
     return 1;
 }
 
-/* Parse a signed integer operand (optional leading '-'). */
 static int parse_signed(P *p, int32_t *out) {
     int neg = 0;
     if (peek(p)->type == T_MINUS) { neg = 1; p->i++; }
@@ -85,7 +79,6 @@ static int parse_signed(P *p, int32_t *out) {
     return 1;
 }
 
-/* Parse an immediate that may be a number or a label reference. */
 static void parse_imm_or_label(P *p, Stmt *s) {
     if (peek(p)->type == T_IDENT) {
         strncpy(s->imm_label, next(p)->text, sizeof s->imm_label - 1);
@@ -94,7 +87,6 @@ static void parse_imm_or_label(P *p, Stmt *s) {
     }
 }
 
-/* Parse "[Rbase]" or "[Rbase+off]" / "[Rbase-off]" into base reg and offset. */
 static int parse_mem(P *p, uint8_t *base, int32_t *off) {
     if (!expect(p, T_LBRACK, "'['")) return 0;
     if (peek(p)->type != T_REG) {
@@ -129,33 +121,33 @@ static uint8_t expect_reg(P *p) {
 static void parse_instr(P *p, StmtVec *out, const MnemEntry *m, int line) {
     Stmt s = { .type = ST_INSTR, .line = line, .op = m->op };
 
-    switch (m->fmt) {
-        case F_NONE:
+    switch (opcode_format(m->op)) {
+        case OPF_NONE:
             break;
-        case F_RD_RS:
+        case OPF_RD_RS:
             s.rdest = expect_reg(p);
             expect(p, T_COMMA, "','");
             s.rsrc = expect_reg(p);
             break;
-        case F_RD:
+        case OPF_RD:
             s.rdest = expect_reg(p);
             break;
-        case F_RD_IMM:
+        case OPF_RD_IMM:
             s.rdest = expect_reg(p);
             expect(p, T_COMMA, "','");
             parse_imm_or_label(p, &s);
             break;
-        case F_RD_MEM:
+        case OPF_RD_MEM:
             s.rdest = expect_reg(p);
             expect(p, T_COMMA, "','");
             parse_mem(p, &s.rsrc, &s.imm);
             break;
-        case F_MEM_RS:
+        case OPF_MEM_RS:
             parse_mem(p, &s.rdest, &s.imm);
             expect(p, T_COMMA, "','");
             s.rsrc = expect_reg(p);
             break;
-        case F_IMM:
+        case OPF_IMM:
             parse_imm_or_label(p, &s);
             break;
     }
@@ -196,7 +188,6 @@ Stmt *parse(const Token *toks, size_t ntok, size_t *out_count) {
         }
 
         if (tk->type == T_IDENT) {
-            /* label definition "name:" or an instruction mnemonic */
             if (p.t[p.i + 1].type == T_COLON) {
                 Stmt s = { .type = ST_LABEL, .line = tk->line };
                 strncpy(s.name, tk->text, sizeof s.name - 1);
