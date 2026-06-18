@@ -1,0 +1,27 @@
+---
+triple:          'arm64-apple-darwin'
+binary-path:     'build/emu'
+relocations:
+  - { offsetInCU: 0x26, offset: 0x26, size: 0x8, addend: 0x0, symName: _main, symObjAddr: 0x0, symBinAddr: 0x1000028D0, symSize: 0x1B8 }
+  - { offsetInCU: 0x41, offset: 0x41, size: 0x8, addend: 0x0, symName: _main, symObjAddr: 0x0, symBinAddr: 0x1000028D0, symSize: 0x1B8 }
+  - { offsetInCU: 0xD1, offset: 0xD1, size: 0x8, addend: 0x0, symName: _load_binary, symObjAddr: 0x1B8, symBinAddr: 0x100002A88, symSize: 0xE8 }
+  - { offsetInCU: 0x123, offset: 0x123, size: 0x8, addend: 0x0, symName: _dump_state, symObjAddr: 0x2A0, symBinAddr: 0x100002B70, symSize: 0xEC }
+  - { offsetInCU: 0x26, offset: 0x49A, size: 0x8, addend: 0x0, symName: _mem_init, symObjAddr: 0x0, symBinAddr: 0x100002C5C, symSize: 0x30 }
+  - { offsetInCU: 0x65, offset: 0x4D9, size: 0x8, addend: 0x0, symName: _mem_init, symObjAddr: 0x0, symBinAddr: 0x100002C5C, symSize: 0x30 }
+  - { offsetInCU: 0x89, offset: 0x4FD, size: 0x8, addend: 0x0, symName: _mem_read8, symObjAddr: 0x30, symBinAddr: 0x100002C8C, symSize: 0x38 }
+  - { offsetInCU: 0xBF, offset: 0x533, size: 0x8, addend: 0x0, symName: _check_bounds, symObjAddr: 0x68, symBinAddr: 0x100002CC4, symSize: 0x78 }
+  - { offsetInCU: 0xF1, offset: 0x565, size: 0x8, addend: 0x0, symName: _mem_write8, symObjAddr: 0xE0, symBinAddr: 0x100002D3C, symSize: 0x44 }
+  - { offsetInCU: 0x131, offset: 0x5A5, size: 0x8, addend: 0x0, symName: _mem_read32, symObjAddr: 0x124, symBinAddr: 0x100002D80, symSize: 0x74 }
+  - { offsetInCU: 0x167, offset: 0x5DB, size: 0x8, addend: 0x0, symName: _mem_write32, symObjAddr: 0x198, symBinAddr: 0x100002DF4, symSize: 0x94 }
+  - { offsetInCU: 0x26, offset: 0x674, size: 0x8, addend: 0x0, symName: _cpu_init, symObjAddr: 0x0, symBinAddr: 0x100002E88, symSize: 0x9C }
+  - { offsetInCU: 0x13F, offset: 0x78D, size: 0x8, addend: 0x0, symName: _cpu_init, symObjAddr: 0x0, symBinAddr: 0x100002E88, symSize: 0x9C }
+  - { offsetInCU: 0x18D, offset: 0x7DB, size: 0x8, addend: 0x0, symName: _cpu_step, symObjAddr: 0x9C, symBinAddr: 0x100002F24, symSize: 0x6A0 }
+  - { offsetInCU: 0x2DB, offset: 0x929, size: 0x8, addend: 0x0, symName: _sign_extend20, symObjAddr: 0x7A8, symBinAddr: 0x100003630, symSize: 0x44 }
+  - { offsetInCU: 0x303, offset: 0x951, size: 0x8, addend: 0x0, symName: _exec_add, symObjAddr: 0x7EC, symBinAddr: 0x100003674, symSize: 0xF8 }
+  - { offsetInCU: 0x36D, offset: 0x9BB, size: 0x8, addend: 0x0, symName: _exec_sub, symObjAddr: 0x8E4, symBinAddr: 0x10000376C, symSize: 0xF8 }
+  - { offsetInCU: 0x3C9, offset: 0xA17, size: 0x8, addend: 0x0, symName: _set_zn, symObjAddr: 0x9DC, symBinAddr: 0x100003864, symSize: 0x40 }
+  - { offsetInCU: 0x3FB, offset: 0xA49, size: 0x8, addend: 0x0, symName: _cpu_run, symObjAddr: 0xA1C, symBinAddr: 0x1000038A4, symSize: 0x68 }
+  - { offsetInCU: 0x42D, offset: 0xA7B, size: 0x8, addend: 0x0, symName: _trace_line, symObjAddr: 0xA84, symBinAddr: 0x10000390C, symSize: 0x1C4 }
+  - { offsetInCU: 0x26, offset: 0xC1F, size: 0x8, addend: 0x0, symName: _opcode_name, symObjAddr: 0x0, symBinAddr: 0x100003AD0, symSize: 0x208 }
+  - { offsetInCU: 0xF3, offset: 0xCEC, size: 0x8, addend: 0x0, symName: _opcode_name, symObjAddr: 0x0, symBinAddr: 0x100003AD0, symSize: 0x208 }
+...
