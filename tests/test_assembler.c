@@ -101,12 +101,23 @@ static void test_undefined_label_fails(void) {
     CHECK(assemble(in, out) != 0);
 }
 
+static void test_immediate_overflow_fails(void) {
+    char in[] = "/tmp/asm_ovf_in.asm";
+    char out[] = "/tmp/asm_ovf_out.bin";
+    FILE *f = fopen(in, "wb");
+    const char *src = "LOADI R0, 9000000\nHALT\n";  /* exceeds 20-bit signed */
+    fwrite(src, 1, strlen(src), f);
+    fclose(f);
+    CHECK(assemble(in, out) != 0);
+}
+
 int main(void) {
     test_basic_encoding();
     test_labels_and_branch();
     test_memory_operands();
     test_comments_and_directives();
     test_undefined_label_fails();
+    test_immediate_overflow_fails();
 
     if (failures == 0) {
         printf("all assembler tests passed\n");
