@@ -214,3 +214,12 @@ int assemble(const char *src_path, const char *out_path);
 ## Suggested Build Order
 
 Spec doc → memory/register structs → CPU loop with arithmetic only → expand CPU instructions → lexer → two-pass parser/encoder → integration testing with example programs → debugger/disassembler polish.
+
+## Milestone Roadmap (execution tracker)
+
+- **M1 — done.** ISA spec (`isa.h`), memory model, CPU core with arithmetic/logic + NOP/HALT/LOADI/JMP, hand-encoded unit tests.
+- **M2 — done.** Full instruction set (data movement, stack, control flow, CALL/RET, I/O), `--trace` mode, `emu` CLI.
+- **M3 — assembler lexer + parser.** Tokenize mnemonics/registers/immediates/labels/directives/comments; parse into an instruction IR with unresolved label references.
+- **M4 — assembler encoder + two-pass + CLI.** Pass 1 builds the label→address table; pass 2 resolves labels and emits via `ENCODE_INSTR`; `asm` CLI (`./asm in.asm -o out.bin`).
+- **M5 — integration.** Example programs (factorial, fibonacci, bubble sort), end-to-end assemble→run tests, edge cases (immediate overflow, undefined labels, div-by-zero).
+- **M6 — high-ROI resume differentiators.** Run real benchmark programs and report instruction throughput; 5-stage pipeline simulation (IF/ID/EX/MEM/WB) with hazard detection and CPI reporting; disassembler (binary → assembly, reusing `opcode_name()`).
