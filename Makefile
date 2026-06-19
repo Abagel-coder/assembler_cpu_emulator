@@ -20,7 +20,7 @@ $(BUILD)/asm: src/main_asm.c $(ASM_SRC) | $(BUILD)
 $(BUILD)/disasm: src/disasm.c src/isa.c | $(BUILD)
 	$(CC) $(CFLAGS) $^ -o $@
 
-$(BUILD)/pipe: src/main_pipe.c src/pipe_sim.c $(CORE_SRC) | $(BUILD)
+$(BUILD)/pipe: src/main_pipe.c src/pipe_sim.c src/bpred.c src/cache.c $(CORE_SRC) | $(BUILD)
 	$(CC) $(CFLAGS) $^ -o $@
 
 $(BUILD):
@@ -43,8 +43,8 @@ $(BUILD)/test_assembler: tests/test_assembler.c $(ASM_SRC) | $(BUILD)
 $(BUILD)/test_integration: tests/test_integration.c $(CORE_SRC) $(ASM_SRC) | $(BUILD)
 	$(CC) $(CFLAGS) tests/test_integration.c src/memory.c src/cpu.c src/lexer.c src/parser.c src/encoder.c src/isa.c -o $@
 
-$(BUILD)/test_pipe: tests/test_pipe.c src/pipe_sim.c $(CORE_SRC) $(ASM_SRC) | $(BUILD)
-	$(CC) $(CFLAGS) tests/test_pipe.c src/pipe_sim.c src/memory.c src/cpu.c src/lexer.c src/parser.c src/encoder.c src/isa.c -o $@
+$(BUILD)/test_pipe: tests/test_pipe.c src/pipe_sim.c src/bpred.c src/cache.c $(CORE_SRC) $(ASM_SRC) | $(BUILD)
+	$(CC) $(CFLAGS) tests/test_pipe.c src/pipe_sim.c src/bpred.c src/cache.c src/memory.c src/cpu.c src/lexer.c src/parser.c src/encoder.c src/isa.c -o $@
 
 clean:
 	rm -rf $(BUILD)

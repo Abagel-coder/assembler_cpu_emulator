@@ -1,53 +1,48 @@
-# Custom ISA — Assembler, Emulator & Pipeline Simulator
+# Custom ISA — Assembler, Emulator & Microarchitecture Simulator
 
-A complete toolchain for a custom 32-bit instruction set architecture, written
-in C11 with no dependencies beyond libc:
+A from-scratch toolchain and **cycle-accurate performance model** for a custom
+32-bit instruction set, written in C11 with no dependencies beyond libc
+(~1,900 lines of C, plus ~600 of tests). It spans the full stack — you write
+assembly, an assembler turns it into a binary, and three engines consume it:
 
-- **Assembler** (`asm`) — two-pass, label resolution, directives, flat-binary output
-- **Emulator** (`emu`) — fetch-decode-execute CPU with trace mode and throughput stats
-- **Disassembler** (`disasm`) — binary back to assembly (round-trip verified)
-- **Pipeline simulator** (`pipe`) — trace-driven 5-stage timing model with hazard
-  analysis, forwarding comparison, and CPI reporting
+- **`asm`** — two-pass assembler (labels, directives, error checking)
+- **`emu`** — functional emulator with trace mode and instruction-throughput stats
+- **`disasm`** — disassembler (binary → assembly, round-trip verified)
+- **`pipe`** — microarchitecture simulator: a structural 5-stage pipeline with
+  hazard detection, forwarding, **four branch predictors + a tournament chooser**,
+  and a **configurable cache hierarchy**, reporting CPI, MPKI, miss rate, and AMAT
 
 ```
-  program.asm ──▶ [ asm ] ──▶ program.bin ──▶ [ emu ]  ──▶ output + stats
-                                   │
-                                   ├──▶ [ disasm ] ──▶ assembly
-                                   └──▶ [ pipe ]   ──▶ CPI / hazard analysis
+  program.asm ──▶ [ asm ] ──▶ program.bin ──┬──▶ [ emu ]    functional run + MIPS
+                  2-pass                     ├──▶ [ disasm ] binary → assembly
+                                             └──▶ [ pipe ]   pipeline + bpred + caches
 ```
 
 ## Build & test
 
 ```sh
 make          # builds asm, emu, disasm, pipe into build/
-make test     # runs unit, assembler, integration, and round-trip suites
+make test     # CPU, assembler, integration, pipeline, and round-trip suites
 ```
 
 ## Quick start
 
 ```sh
-./build/asm examples/factorial.asm -o factorial.bin
-./build/emu --stats factorial.bin       # run, then print instruction count & MIPS
-./build/emu --trace factorial.bin       # per-cycle register/flag trace
-./build/disasm factorial.bin            # annotated disassembly
-./build/pipe factorial.bin              # pipeline / CPI analysis
+./build/asm examples/bubble_sort.asm -o bs.bin
+./build/emu --stats bs.bin                  # run; print instruction count + MIPS
+./build/disasm bs.bin                        # annotated disassembly
+./build/pipe bs.bin                          # full pipeline/predictor/cache report
+./build/pipe --predictor gshare --l1d 2048:4:32 bs.bin --csv   # one configured run
 ```
+
+---
 
 ## Instruction set architecture
 
-32-bit fixed-width instructions:
-
-```
- 31        26 25     23 22     20 19                   0
-+-----------+---------+---------+----------------------+
-|  opcode   |  rdest  |  rsrc   |   immediate / offset |
-|  6 bits   | 3 bits  | 3 bits  |        20 bits       |
-+-----------+---------+---------+----------------------+
-```
-
-- **Registers:** `R0`–`R7`, plus `PC`, `SP`, and `FLAGS` (Zero, Carry, Overflow, Negative)
-- **Memory:** 64 KB, byte-addressable, little-endian; stack grows down from the top
-- **Addressing:** register-direct, immediate, and base+offset memory (`[R2+8]`)
+32-bit fixed-width instructions: 6-bit opcode, two 3-bit register fields, 20-bit
+sign-extended immediate. Registers `R0`–`R7`, `PC`, `SP`, and `FLAGS` (Zero,
+Carry, Overflow, Negative). Memory is 64 KB, byte-addressable, little-endian;
+the stack grows down from the top.
 
 | Category         | Mnemonics                                       |
 |------------------|-------------------------------------------------|
@@ -56,51 +51,103 @@ make test     # runs unit, assembler, integration, and round-trip suites
 | Control flow     | JMP JZ JNZ JG JL CALL RET                       |
 | System           | NOP HALT IN OUT                                 |
 
-### Assembly syntax
-
 ```asm
-; comments start with a semicolon
         LOADI R0, 5        ; immediate (decimal or 0x hex, may be negative)
 loop:                      ; label
         LOAD  R1, [R2+4]   ; base + offset memory access
         JNZ   loop         ; labels resolve to addresses
-.org 256                   ; set assembly address
-arr:    .word 42           ; emit a literal word
+.org 256
+arr:    .word 42           ; data directive
 ```
 
-## Pipeline analysis
+---
 
-`pipe` executes the program to capture the real dynamic instruction stream, then
-runs it through an in-order 5-stage (IF/ID/EX/MEM/WB) timing model. It models RAW
-data hazards on registers and flags, load-use hazards, and taken-branch control
-hazards, and reports cycles/CPI both with and without operand forwarding.
+## Microarchitecture simulator
 
-Measured on the bundled examples:
+`pipe` uses a **decoupled functional + timing** design — the same architecture
+used by production performance models. A reference CPU executes the program so
+results are correct by construction; the captured instruction stream (with real
+branch outcomes and memory addresses) then drives a structural timing model.
 
-| Program     | Dyn. instrs | CPI (no fwd) | CPI (fwd) | Forwarding speedup |
-|-------------|------------:|-------------:|----------:|-------------------:|
-| factorial   |          20 |        2.150 |     1.600 |              1.34x |
-| fibonacci   |          66 |        2.091 |     1.333 |              1.57x |
-| bubble_sort |         144 |        2.076 |     1.382 |              1.50x |
+- **Pipeline** — five stages (IF/ID/EX/MEM/WB) advanced one cycle at a time with
+  explicit stage latches. A hazard-detection unit inspects the EX/MEM latches; a
+  forwarding toggle switches between full EX/MEM forwarding (only load-use stalls
+  remain) and none (a consumer waits until its producer reaches WB). Flags are
+  modeled as a 9th register so flag-setter → conditional-branch dependencies count.
+- **Branch prediction** — static-not-taken, 1-bit, 2-bit bimodal, gshare
+  (global-history XOR PC), and a **tournament** predictor whose chooser selects
+  between bimodal and gshare per context; plus a BTB for targets. Mispredictions
+  drive the flush penalty.
+- **Caches** — configurable L1 I/D (size, block, associativity, LRU/FIFO/random
+  replacement); misses stall the relevant stage and feed AMAT.
 
-Forwarding eliminates nearly all data stalls; the residual stalls are
-unavoidable load-use hazards (a load result isn't ready until after MEM).
+### Methodology & validation
+- **Oracle equality** — the simulator's final register and memory state is
+  asserted equal to an independent `cpu.c` run on every benchmark.
+- **Analytical cross-check** — pipeline cycle counts are locked against a
+  hand-derived model (this caught a retirement off-by-one during development).
+- **37 timing assertions** across pipeline, predictor, cache, and tournament tests.
+
+---
+
+## Results
+
+Measured on the bundled benchmark suite via `tools/run_suite.sh`. Regenerate the
+data and charts with `make && sh tools/run_suite.sh && python3 tools/plot.py`.
+
+### Throughput (functional emulator)
+~**67 MIPS** — 20,000,063 instructions in 0.30 s.
+
+### Forwarding
+Operand forwarding alone is worth **1.34×–1.71×** by erasing data-hazard stalls;
+the residual stalls are unavoidable load-use hazards.
+
+| Program | CPI no-fwd | CPI fwd | Speedup |
+|---|--:|--:|--:|
+| fibonacci | 2.09 | 1.33 | 1.57× |
+| bubble_sort | 2.08 | 1.38 | 1.50× |
+| nested_loops | 1.71 | 1.05 | 1.63× |
+| streaming | 1.93 | 1.13 | 1.71× |
+
+### Branch prediction
+![branch prediction accuracy](docs/predictors_accuracy.svg)
+
+The ordering is **workload-dependent**, which is the whole point:
+
+- **Correlated branches** (`nested_loops`, a short fixed inner loop): gshare
+  learns the repeating `T,T,T,N` pattern and hits **99.4%**, vs. 79.8% for bimodal
+  and 20% for static — including the loop *exits* a per-PC counter can't predict.
+- **Predictable loops** (`streaming`): every dynamic predictor reaches ~99.5%.
+- **Tiny / data-dependent code** (`gcd`, `recursive`): dynamic predictors can
+  *lose* to static-not-taken — too few branches to warm up, and a {bimodal,
+  gshare} tournament can't recover when both components are wrong. This is exactly
+  why the result is interesting rather than a monotone "gshare always wins."
+- **Tournament** is never worse than its worse component and tracks the best one
+  (nested_loops 99.2% ≈ gshare; bubble_sort matches the better bimodal).
+
+### Caches — the capacity cliff
+![L1-D miss rate vs cache size](docs/cache_cliff.svg)
+
+`streaming` sweeps a 1.6 KB array three times. While L1-D is smaller than the
+working set the array re-misses every pass (**12.5%**); once it fits (≥ 2 KB) only
+first-pass compulsory misses remain (**3.1%**), and CPI drops 1.30 → 1.16.
+
+---
 
 ## Project layout
 
 ```
-include/   isa.h  cpu.h  memory.h  assembler.h
-src/       cpu.c memory.c isa.c          # emulator core
-           lexer.c parser.c encoder.c    # assembler (two-pass)
-           main_emu.c main_asm.c         # CLI entry points
-           disasm.c pipeline.c           # tooling
-examples/  factorial.asm fibonacci.asm bubble_sort.asm
-tests/     test_cpu_core.c test_assembler.c test_integration.c roundtrip.sh
+include/   isa.h cpu.h memory.h assembler.h bpred.h cache.h pipe_sim.h
+src/       cpu.c memory.c isa.c                 # emulator core
+           lexer.c parser.c encoder.c          # assembler (two-pass)
+           bpred.c cache.c pipe_sim.c          # microarchitecture model
+           main_emu.c main_asm.c disasm.c main_pipe.c
+examples/  factorial fibonacci bubble_sort nested_loops gcd recursive streaming
+tests/     test_cpu_core test_assembler test_integration test_pipe roundtrip.sh
+tools/     run_suite.sh (CSV sweeps)  plot.py (SVG charts)
 ```
 
-## Testing
-
-The suite covers per-opcode unit tests (hand-encoded), assembler encoding and
-error paths (undefined labels, immediate overflow), full assemble-and-run
-integration on the example programs, and an assemble→disassemble→assemble
-round-trip that verifies encoder/decoder symmetry.
+## Future work
+- Tournament with a static fallback (recover the gcd/recursive cases)
+- Out-of-order (Tomasulo) or 2-wide superscalar issue
+- Unified L2 and a memory-mapped I/O model

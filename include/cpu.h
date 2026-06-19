@@ -16,6 +16,10 @@ typedef struct {
     uint64_t icount;
 } CPU;
 
+/* When nonzero, IN/OUT perform no real I/O (used by the timing simulator,
+ * which executes the program only to capture its instruction stream). */
+extern int cpu_silent;
+
 void cpu_init(CPU *cpu, Memory *mem);
 void cpu_step(CPU *cpu);
 void cpu_run(CPU *cpu, int trace);

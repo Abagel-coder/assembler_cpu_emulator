@@ -3,6 +3,8 @@
 
 #include <stdio.h>
 
+int cpu_silent = 0;
+
 void cpu_init(CPU *cpu, Memory *mem) {
     for (int i = 0; i < NUM_REGS; i++) {
         cpu->regs[i] = 0;
@@ -172,12 +174,12 @@ void cpu_step(CPU *cpu) {
 
         case OP_IN: {
             unsigned long v = 0;
-            if (scanf("%lu", &v) != 1) v = 0;
+            if (!cpu_silent && scanf("%lu", &v) != 1) v = 0;
             cpu->regs[ins.rdest] = (uint32_t)v;
             break;
         }
         case OP_OUT:
-            printf("%u\n", cpu->regs[ins.rdest]);
+            if (!cpu_silent) printf("%u\n", cpu->regs[ins.rdest]);
             break;
 
         default:
