@@ -1,9 +1,9 @@
 # Custom ISA — Assembler, Emulator & Microarchitecture Simulator
 
-A from-scratch toolchain and **cycle-accurate performance model** for a custom
-32-bit instruction set, written in C11 with no dependencies beyond libc
-(~1,900 lines of C, plus ~600 of tests). It spans the full stack — you write
-assembly, an assembler turns it into a binary, and three engines consume it:
+A toolchain and cycle-accurate performance model for a custom 32-bit instruction
+set, written in C11 with no dependencies beyond libc (~1,900 lines of C, plus
+~600 of tests). You write assembly, the assembler produces a binary, and three
+tools consume it:
 
 - **`asm`** — two-pass assembler (labels, directives, error checking)
 - **`emu`** — functional emulator with trace mode and instruction-throughput stats
@@ -64,10 +64,10 @@ arr:    .word 42           ; data directive
 
 ## Microarchitecture simulator
 
-`pipe` uses a **decoupled functional + timing** design — the same architecture
-used by production performance models. A reference CPU executes the program so
-results are correct by construction; the captured instruction stream (with real
-branch outcomes and memory addresses) then drives a structural timing model.
+`pipe` uses a decoupled functional + timing design. A reference CPU executes the
+program, so architectural results are correct by construction; the captured
+instruction stream (with real branch outcomes and memory addresses) then drives
+a structural timing model.
 
 - **Pipeline** — five stages (IF/ID/EX/MEM/WB) advanced one cycle at a time with
   explicit stage latches. A hazard-detection unit inspects the EX/MEM latches; a
@@ -99,8 +99,8 @@ data and charts with `make && sh tools/run_suite.sh && python3 tools/plot.py`.
 ~**67 MIPS** — 20,000,063 instructions in 0.30 s.
 
 ### Forwarding
-Operand forwarding alone is worth **1.34×–1.71×** by erasing data-hazard stalls;
-the residual stalls are unavoidable load-use hazards.
+Forwarding yields **1.34×–1.71×** by removing data-hazard stalls. The remaining
+stalls are load-use hazards, which forwarding cannot eliminate.
 
 | Program | CPI no-fwd | CPI fwd | Speedup |
 |---|--:|--:|--:|
@@ -112,18 +112,18 @@ the residual stalls are unavoidable load-use hazards.
 ### Branch prediction
 ![branch prediction accuracy](docs/predictors_accuracy.svg)
 
-The ordering is **workload-dependent**, which is the whole point:
+The ordering depends on the workload:
 
 - **Correlated branches** (`nested_loops`, a short fixed inner loop): gshare
-  learns the repeating `T,T,T,N` pattern and hits **99.4%**, vs. 79.8% for bimodal
-  and 20% for static — including the loop *exits* a per-PC counter can't predict.
+  learns the repeating `T,T,T,N` pattern and reaches **99.4%**, vs. 79.8% for
+  bimodal and 20% for static. It predicts the loop exits, which a per-PC counter
+  cannot.
 - **Predictable loops** (`streaming`): every dynamic predictor reaches ~99.5%.
-- **Tiny / data-dependent code** (`gcd`, `recursive`): dynamic predictors can
-  *lose* to static-not-taken — too few branches to warm up, and a {bimodal,
-  gshare} tournament can't recover when both components are wrong. This is exactly
-  why the result is interesting rather than a monotone "gshare always wins."
-- **Tournament** is never worse than its worse component and tracks the best one
-  (nested_loops 99.2% ≈ gshare; bubble_sort matches the better bimodal).
+- **Tiny / data-dependent code** (`gcd`, `recursive`): dynamic predictors lose to
+  static-not-taken. There are too few branches to warm up, and a {bimodal, gshare}
+  tournament cannot recover when both components mispredict.
+- **Tournament** is never worse than its worse component and tracks the better one
+  (nested_loops 99.2% ≈ gshare; bubble_sort matches bimodal).
 
 ### Caches — the capacity cliff
 ![L1-D miss rate vs cache size](docs/cache_cliff.svg)
