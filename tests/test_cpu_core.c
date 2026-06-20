@@ -201,8 +201,31 @@ static void test_signed_jg_jl(void) {
     CHECK(cpu.regs[2] == 1);
 }
 
+static void test_mmio(void) {
+    CPU cpu; Memory mem;
+    /* Store to device addresses: print register, then halt via MMIO. The poison
+     * LOADI after the halt store must not execute, and RAM at the device
+     * address must stay untouched. */
+    uint32_t prog[] = {
+        ENCODE_INSTR(OP_LOADI, 1, 0, 0xE000),   /* R1 = MMIO_OUT  */
+        ENCODE_INSTR(OP_LOADI, 2, 0, 0xE00C),   /* R2 = MMIO_HALT */
+        ENCODE_INSTR(OP_LOADI, 0, 0, 42),
+        ENCODE_INSTR(OP_STORE, 1, 0, 0),        /* device write (no RAM write) */
+        ENCODE_INSTR(OP_STORE, 2, 0, 0),        /* halt via MMIO */
+        ENCODE_INSTR(OP_LOADI, 0, 0, 99),       /* must not execute */
+        ENCODE_INSTR(OP_HALT,  0, 0, 0),
+    };
+    cpu_silent = 1;   /* suppress the device's console output during the test */
+    load_and_run(&cpu, &mem, prog, sizeof prog / sizeof prog[0]);
+    cpu_silent = 0;
+    CHECK(cpu.halted == 1);
+    CHECK(cpu.regs[0] == 42);                   /* poison LOADI skipped */
+    CHECK(mem_read32(&mem, 0xE000) == 0);       /* device store bypassed RAM */
+}
+
 int main(void) {
     test_arithmetic();
+    test_mmio();
     test_sub_to_zero_sets_zflag();
     test_logic_and_shift();
     test_mul_div();

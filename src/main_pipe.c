@@ -20,13 +20,28 @@ static PipeStats run(const Memory *base, PipeConfig cfg) {
     return s;
 }
 
+static PipeStats run_ss(const Memory *base, PipeConfig cfg, int w) {
+    Memory *m = clone(base);
+    PipeStats s = pipe_run_ss(m, cfg, w);
+    free(m);
+    return s;
+}
+
+static PipeStats run_ooo(const Memory *base, PipeConfig cfg, int w, int rob, int io) {
+    Memory *m = clone(base);
+    PipeStats s = pipe_run_ooo(m, cfg, w, rob, io);
+    free(m);
+    return s;
+}
+
 static BpKind parse_pred(const char *s) {
     if (!strcmp(s, "none"))       return BP_NONE;
     if (!strcmp(s, "static"))     return BP_STATIC_NT;
     if (!strcmp(s, "1bit"))       return BP_BIMODAL1;
     if (!strcmp(s, "2bit"))       return BP_BIMODAL2;
-    if (!strcmp(s, "gshare"))     return BP_GSHARE;
-    if (!strcmp(s, "tournament")) return BP_TOURNAMENT;
+    if (!strcmp(s, "gshare"))      return BP_GSHARE;
+    if (!strcmp(s, "tournament"))  return BP_TOURNAMENT;
+    if (!strcmp(s, "tournament3")) return BP_TOURNAMENT3;
     return BP_BIMODAL2;
 }
 
@@ -66,7 +81,8 @@ static void full_report(const Memory *base, const char *path) {
     printf("=== branch prediction (forwarding on) ===\n");
     printf("%-13s %8s %8s %8s %7s %9s %6s\n",
            "predictor", "cond", "mispred", "acc%", "MPKI", "cycles", "CPI");
-    BpKind kinds[] = { BP_STATIC_NT, BP_BIMODAL1, BP_BIMODAL2, BP_GSHARE, BP_TOURNAMENT };
+    BpKind kinds[] = { BP_STATIC_NT, BP_BIMODAL1, BP_BIMODAL2, BP_GSHARE,
+                       BP_TOURNAMENT, BP_TOURNAMENT3 };
     for (size_t i = 0; i < sizeof kinds / sizeof kinds[0]; i++) {
         PipeStats s = run(base, (PipeConfig){ .forwarding = 1, .bp = kinds[i] });
         printf("%-13s %8llu %8llu %7.1f%% %7.2f %9llu %6.3f\n",
@@ -93,6 +109,52 @@ static void full_report(const Memory *base, const char *path) {
     printf("cycles with caches   : %llu  CPI %.3f  (mem stalls %llu)\n",
            (unsigned long long)cs.cycles, (double)cs.cycles / n,
            (unsigned long long)cs.mem_stalls);
+
+    printf("\n=== superscalar issue width (forwarding on, bimodal-2bit) ===\n");
+    printf("%-6s %9s %7s %7s\n", "width", "cycles", "CPI", "IPC");
+    int widths[] = { 1, 2, 4 };
+    for (size_t i = 0; i < sizeof widths / sizeof widths[0]; i++) {
+        PipeStats s = run_ss(base, (PipeConfig){ .forwarding = 1, .bp = BP_BIMODAL2 },
+                             widths[i]);
+        printf("%-6d %9llu %7.3f %7.3f\n", widths[i],
+               (unsigned long long)s.cycles, (double)s.cycles / n,
+               (double)n / s.cycles);
+    }
+
+    printf("\n=== out-of-order (width 2, ROB 64; DIV=20 MUL=3 LOAD=2) ===\n");
+    printf("%-10s %9s %7s %7s\n", "mode", "cycles", "CPI", "IPC");
+    PipeStats io = run_ooo(base, (PipeConfig){ .bp = BP_BIMODAL2 }, 2, 64, 1);
+    PipeStats oo = run_ooo(base, (PipeConfig){ .bp = BP_BIMODAL2 }, 2, 64, 0);
+    printf("%-10s %9llu %7.3f %7.3f\n", "in-order",
+           (unsigned long long)io.cycles, (double)io.cycles / n, (double)n / io.cycles);
+    printf("%-10s %9llu %7.3f %7.3f\n", "OoO",
+           (unsigned long long)oo.cycles, (double)oo.cycles / n, (double)n / oo.cycles);
+    printf("OoO speedup          : %.2fx\n", (double)io.cycles / oo.cycles);
+
+    printf("\n=== memory hierarchy: L1-only vs +L2 (L1 1KB, L2 16KB, mem=100) ===\n");
+    CacheConfig l1m = { .enabled = 1, .size_bytes = 1024, .block_bytes = 32, .assoc = 4,
+                        .repl = REPL_LRU, .hit_latency = 1, .miss_penalty = 100 };
+    CacheConfig l2c = { .enabled = 1, .size_bytes = 16384, .block_bytes = 64, .assoc = 8,
+                        .repl = REPL_LRU, .hit_latency = 10, .miss_penalty = 100 };
+    PipeStats m1 = run(base, (PipeConfig){ .forwarding = 1, .bp = BP_BIMODAL2,
+                                           .icache = l1m, .dcache = l1m });
+    PipeStats m2 = run(base, (PipeConfig){ .forwarding = 1, .bp = BP_BIMODAL2,
+                                           .icache = l1m, .dcache = l1m, .l2 = l2c });
+    printf("%-10s %9s %7s %11s\n", "config", "cycles", "CPI", "mem stalls");
+    printf("%-10s %9llu %7.3f %11llu\n", "L1 only",
+           (unsigned long long)m1.cycles, (double)m1.cycles / n,
+           (unsigned long long)m1.mem_stalls);
+    printf("%-10s %9llu %7.3f %11llu\n", "L1 + L2",
+           (unsigned long long)m2.cycles, (double)m2.cycles / n,
+           (unsigned long long)m2.mem_stalls);
+    if (m2.l2_accesses) {
+        double l2_amat = 10.0 + (double)m2.l2_misses / m2.l2_accesses * 100.0;
+        double dmr = m2.dcache_accesses ? (double)m2.dcache_misses / m2.dcache_accesses : 0;
+        printf("L2: %llu accesses, %.2f%% miss   L1-D AMAT(+L2) = %.2f cycles\n",
+               (unsigned long long)m2.l2_accesses,
+               pct(m2.l2_misses, m2.l2_accesses), 1.0 + dmr * l2_amat);
+    }
+    printf("L2 speedup           : %.2fx\n", (double)m1.cycles / m2.cycles);
 }
 
 int main(int argc, char **argv) {

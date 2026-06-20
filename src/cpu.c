@@ -1,5 +1,6 @@
 #include "cpu.h"
 #include "isa.h"
+#include "device.h"
 
 #include <stdio.h>
 
@@ -125,14 +126,19 @@ void cpu_step(CPU *cpu) {
         case OP_MOV:
             cpu->regs[ins.rdest] = cpu->regs[ins.rsrc];
             break;
-        case OP_LOAD:
-            cpu->regs[ins.rdest] =
-                mem_read32(cpu->mem, cpu->regs[ins.rsrc] + (uint32_t)ins.imm);
+        case OP_LOAD: {
+            uint32_t addr = cpu->regs[ins.rsrc] + (uint32_t)ins.imm;
+            cpu->regs[ins.rdest] = mmio_is_device(addr)
+                ? mmio_load(addr) : mem_read32(cpu->mem, addr);
             break;
-        case OP_STORE:
-            mem_write32(cpu->mem, cpu->regs[ins.rdest] + (uint32_t)ins.imm,
-                        cpu->regs[ins.rsrc]);
+        }
+        case OP_STORE: {
+            uint32_t addr = cpu->regs[ins.rdest] + (uint32_t)ins.imm;
+            uint32_t val = cpu->regs[ins.rsrc];
+            if (mmio_is_device(addr)) mmio_store(cpu, addr, val);
+            else mem_write32(cpu->mem, addr, val);
             break;
+        }
         case OP_LOADI:
             cpu->regs[ins.rdest] = (uint32_t)ins.imm;
             break;

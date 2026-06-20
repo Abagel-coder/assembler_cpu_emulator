@@ -4,7 +4,7 @@ CC      := cc
 CFLAGS  := -std=c11 -Wall -Wextra -Werror -Iinclude -g
 BUILD   := build
 
-CORE_SRC := src/memory.c src/cpu.c src/isa.c
+CORE_SRC := src/memory.c src/cpu.c src/isa.c src/device.c
 ASM_SRC  := src/lexer.c src/parser.c src/encoder.c src/isa.c
 
 .PHONY: all test clean
@@ -41,10 +41,10 @@ $(BUILD)/test_assembler: tests/test_assembler.c $(ASM_SRC) | $(BUILD)
 	$(CC) $(CFLAGS) $^ -o $@
 
 $(BUILD)/test_integration: tests/test_integration.c $(CORE_SRC) $(ASM_SRC) | $(BUILD)
-	$(CC) $(CFLAGS) tests/test_integration.c src/memory.c src/cpu.c src/lexer.c src/parser.c src/encoder.c src/isa.c -o $@
+	$(CC) $(CFLAGS) tests/test_integration.c src/memory.c src/cpu.c src/isa.c src/device.c src/lexer.c src/parser.c src/encoder.c -o $@
 
 $(BUILD)/test_pipe: tests/test_pipe.c src/pipe_sim.c src/bpred.c src/cache.c $(CORE_SRC) $(ASM_SRC) | $(BUILD)
-	$(CC) $(CFLAGS) tests/test_pipe.c src/pipe_sim.c src/bpred.c src/cache.c src/memory.c src/cpu.c src/lexer.c src/parser.c src/encoder.c src/isa.c -o $@
+	$(CC) $(CFLAGS) tests/test_pipe.c src/pipe_sim.c src/bpred.c src/cache.c src/memory.c src/cpu.c src/isa.c src/device.c src/lexer.c src/parser.c src/encoder.c -o $@
 
 clean:
 	rm -rf $(BUILD)

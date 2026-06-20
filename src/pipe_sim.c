@@ -1,16 +1,18 @@
 /* Decoupled functional + structural timing simulator.
  *
- * Functional path: the program is executed by the reference CPU (cpu_step), so
- * architectural results are correct by construction. Each retired instruction
- * is recorded as an InstInfo describing its register/flag reads and writes and
- * its actual control outcome.
+ * Functional path: the reference CPU (cpu_step) executes the program, so
+ * architectural results are correct by construction. Each instruction is decoded
+ * into an InstInfo describing its register/flag reads and writes, control
+ * outcome, and data address.
  *
- * Timing path: that instruction stream is pushed through a real 5-stage
- * (IF/ID/EX/MEM/WB) pipeline advanced one cycle at a time. A hazard-detection
- * unit inspects the EX/MEM stage latches to decide stalls; a forwarding toggle
- * switches between full EX/MEM forwarding (only load-use stalls remain) and no
- * forwarding (a consumer waits until its producer reaches WB). Taken control
- * transfers inject a fixed redirect penalty.
+ * Timing path: a real 5-stage (IF/ID/EX/MEM/WB) pipeline advanced one cycle at a
+ * time. A hazard-detection unit inspects the EX/MEM latches; a forwarding toggle
+ * switches between full EX/MEM forwarding (load-use stalls only) and none.
+ * Branch predictors and a cache hierarchy drive the redirect and memory stalls.
+ *
+ * Instructions are generated on demand into a small ring buffer rather than
+ * materialized as a full trace, so memory is O(pipeline depth), not O(program
+ * length); multi-million-instruction runs use a few KB.
  */
 #include "pipe_sim.h"
 #include "isa.h"
@@ -19,6 +21,9 @@
 
 #define FLAG_REG        8
 #define CONTROL_PENALTY 2
+#define WIN_CAP         32          /* >> max instructions in flight */
+#define WIN_MASK        (WIN_CAP - 1)
+#define GEN_LIMIT       50000000L
 
 typedef struct {
     int reads[3];
@@ -33,7 +38,17 @@ typedef struct {
     uint32_t target;      /* actual next pc when taken */
     int accesses_mem;
     uint32_t mem_addr;
+    int latency;          /* functional-unit latency (cycles), for the OoO model */
 } InstInfo;
+
+static int op_latency(Opcode op) {
+    switch (op) {
+        case OP_DIV:  return 20;
+        case OP_MUL:  return 3;
+        case OP_LOAD: case OP_POP: return 2;
+        default:      return 1;
+    }
+}
 
 static int op_is_conditional(Opcode op) {
     return op == OP_JZ || op == OP_JNZ || op == OP_JG || op == OP_JL;
@@ -62,6 +77,7 @@ static void decode_meta(InstInfo *d, Opcode op, uint8_t rd, uint8_t rs) {
     d->sets_flags = op_sets_flags(op);
     d->is_control = op_is_control(op);
     d->is_conditional = op_is_conditional(op);
+    d->latency = op_latency(op);
 
     switch (op) {
         case OP_ADD: case OP_SUB: case OP_MUL: case OP_DIV:
@@ -105,58 +121,57 @@ static void decode_meta(InstInfo *d, Opcode op, uint8_t rd, uint8_t rs) {
     }
 }
 
-static InstInfo *capture(Memory *mem, long *out_n, PipeStats *st) {
-    CPU cpu;
-    cpu_init(&cpu, mem);
+/* On-demand instruction generator with a bounded ring buffer. Instruction k is
+ * produced by stepping the reference CPU; only the live pipeline window is kept. */
+typedef struct {
+    CPU      cpu;
+    long     count;          /* instructions produced so far */
+    int      done;
+    InstInfo win[WIN_CAP];
+} Gen;
 
-    int prev_silent = cpu_silent;
-    cpu_silent = 1;   /* analysis run: suppress the program's own I/O */
+static void gen_init(Gen *g, Memory *mem) {
+    cpu_init(&g->cpu, mem);
+    g->count = 0;
+    g->done = 0;
+}
 
-    long cap = 4096, n = 0;
-    InstInfo *trace = malloc((size_t)cap * sizeof(InstInfo));
+static void gen_one(Gen *g) {
+    CPU *cpu = &g->cpu;
+    uint32_t raw = mem_read32(cpu->mem, cpu->pc);
+    Opcode op = DECODE_OPCODE(raw);
+    uint8_t rd = DECODE_RDEST(raw);
+    uint8_t rs = DECODE_RSRC(raw);
+    int32_t imm = DECODE_IMM(raw);
 
-    const long LIMIT = 50000000;
-    while (!cpu.halted && n < LIMIT) {
-        uint32_t raw = mem_read32(mem, cpu.pc);
-        Opcode op = DECODE_OPCODE(raw);
-        uint8_t rd = DECODE_RDEST(raw);
-        uint8_t rs = DECODE_RSRC(raw);
-        int32_t imm = DECODE_IMM(raw);
-
-        if (n == cap) {
-            cap *= 2;
-            trace = realloc(trace, (size_t)cap * sizeof(InstInfo));
-        }
-        InstInfo *d = &trace[n];
-        decode_meta(d, op, rd, rs);
-
-        d->accesses_mem = 1;
-        switch (op) {
-            case OP_LOAD:  d->mem_addr = cpu.regs[rs] + (uint32_t)imm; break;
-            case OP_STORE: d->mem_addr = cpu.regs[rd] + (uint32_t)imm; break;
-            case OP_PUSH:  case OP_CALL: d->mem_addr = cpu.sp - 4; break;
-            case OP_POP:   case OP_RET:  d->mem_addr = cpu.sp;      break;
-            default:       d->accesses_mem = 0; break;
-        }
-
-        uint32_t pc_before = cpu.pc;
-        cpu_step(&cpu);
-        d->pc = pc_before;
-        d->target = cpu.pc;
-        d->taken_control = (cpu.pc != pc_before + 4);
-        n++;
+    InstInfo *d = &g->win[g->count & WIN_MASK];
+    decode_meta(d, op, rd, rs);
+    d->accesses_mem = 1;
+    switch (op) {
+        case OP_LOAD:  d->mem_addr = cpu->regs[rs] + (uint32_t)imm; break;
+        case OP_STORE: d->mem_addr = cpu->regs[rd] + (uint32_t)imm; break;
+        case OP_PUSH:  case OP_CALL: d->mem_addr = cpu->sp - 4; break;
+        case OP_POP:   case OP_RET:  d->mem_addr = cpu->sp;      break;
+        default:       d->accesses_mem = 0; break;
     }
 
-    cpu_silent = prev_silent;
+    uint32_t pc_before = cpu->pc;
+    cpu_step(cpu);
+    d->pc = pc_before;
+    d->target = cpu->pc;
+    d->taken_control = (cpu->pc != pc_before + 4);
+    g->count++;
+    if (cpu->halted || g->count >= GEN_LIMIT) g->done = 1;
+}
 
-    for (int i = 0; i < NUM_REGS; i++) st->regs[i] = cpu.regs[i];
-    st->pc = cpu.pc;
-    st->sp = cpu.sp;
-    st->fz = cpu.flags.z; st->fc = cpu.flags.c;
-    st->fo = cpu.flags.o; st->fn = cpu.flags.n;
+/* Produce up to index k (k stays within the live pipeline window). */
+static int gen_ensure(Gen *g, long k) {
+    while (g->count <= k && !g->done) gen_one(g);
+    return k < g->count;
+}
 
-    *out_n = n;
-    return trace;
+static const InstInfo *gen_at(const Gen *g, long idx) {
+    return &g->win[idx & WIN_MASK];
 }
 
 static int produces(const InstInfo *p, int slot) {
@@ -167,16 +182,17 @@ static int produces(const InstInfo *p, int slot) {
 
 /* Hazard-detection unit: does the instruction in ID need to stall this cycle,
  * given what currently occupies the EX and MEM latches? */
-static int needs_stall(const InstInfo *trace, int id, int ex, int mem, int fwd) {
+static int needs_stall(const Gen *g, long id, long ex, long mem, int fwd) {
     if (id < 0) return 0;
-    const InstInfo *d = &trace[id];
+    const InstInfo *d = gen_at(g, id);
     for (int r = 0; r < d->nreads; r++) {
         int s = d->reads[r];
         if (fwd) {
-            if (ex >= 0 && trace[ex].is_load && produces(&trace[ex], s)) return 1;
+            if (ex >= 0 && gen_at(g, ex)->is_load && produces(gen_at(g, ex), s))
+                return 1;
         } else {
-            if (ex >= 0 && produces(&trace[ex], s)) return 1;
-            if (mem >= 0 && produces(&trace[mem], s)) return 1;
+            if (ex >= 0 && produces(gen_at(g, ex), s)) return 1;
+            if (mem >= 0 && produces(gen_at(g, mem), s)) return 1;
         }
     }
     return 0;
@@ -214,9 +230,12 @@ static long control_penalty(BPredictor *bp, BpKind kind, const InstInfo *d,
 
 PipeStats pipe_run(Memory *mem, PipeConfig cfg) {
     PipeStats st = {0};
-    long n = 0;
-    InstInfo *trace = capture(mem, &n, &st);
-    st.instructions = (uint64_t)n;
+
+    int prev_silent = cpu_silent;
+    cpu_silent = 1;   /* analysis run: suppress the program's own I/O */
+
+    Gen g;
+    gen_init(&g, mem);
 
     BPredictor bp;
     if (cfg.bp != BP_NONE) {
@@ -224,19 +243,20 @@ PipeStats pipe_run(Memory *mem, PipeConfig cfg) {
                 cfg.bp_idx_bits ? cfg.bp_idx_bits : 10,
                 cfg.bp_ghist_bits ? cfg.bp_ghist_bits : 8);
     }
-    Cache ic, dc;
+    Cache ic, dc, l2;
     if (cfg.icache.enabled) cache_init(&ic, cfg.icache);
     if (cfg.dcache.enabled) cache_init(&dc, cfg.dcache);
+    if (cfg.l2.enabled)     cache_init(&l2, cfg.l2);
 
-    int IF = -1, ID = -1, EX = -1, MEM = -1, WB = -1;
+    long IF = -1, ID = -1, EX = -1, MEM = -1, WB = -1;
     long next = 0, retired = 0, pending_fetch = -1;
     long ctrl_pending = 0, fetch_stall = 0, mem_stall = 0;
     uint64_t cycles = 0, data_stalls = 0, control_stalls = 0;
-    uint64_t bound = (uint64_t)(n + 16) *
-        (uint64_t)(20 + cfg.icache.miss_penalty + cfg.dcache.miss_penalty) + 64;
+    int per_inst = 20 + cfg.icache.miss_penalty + cfg.dcache.miss_penalty;
 
-    while (retired < n) {
+    while (!(g.done && retired >= g.count)) {
         cycles++;
+        uint64_t bound = (uint64_t)(g.count + 16) * (uint64_t)per_inst + 64;
 
         if (mem_stall > 0) {           /* D-cache miss: whole pipe holds behind MEM */
             mem_stall--;
@@ -245,13 +265,19 @@ PipeStats pipe_run(Memory *mem, PipeConfig cfg) {
             continue;
         }
 
-        int stall = needs_stall(trace, ID, EX, MEM, cfg.forwarding);
+        int stall = needs_stall(&g, ID, EX, MEM, cfg.forwarding);
 
         WB = MEM;
         MEM = EX;
-        if (cfg.dcache.enabled && MEM >= 0 && trace[MEM].accesses_mem) {
-            if (!cache_access(&dc, trace[MEM].mem_addr))
-                mem_stall = cfg.dcache.miss_penalty;
+        if (cfg.dcache.enabled && MEM >= 0 && gen_at(&g, MEM)->accesses_mem) {
+            uint32_t addr = gen_at(&g, MEM)->mem_addr;
+            if (!cache_access(&dc, addr)) {
+                long pen = cfg.dcache.miss_penalty;
+                if (cfg.l2.enabled)
+                    pen = cache_access(&l2, addr) ? cfg.l2.hit_latency
+                                                  : cfg.l2.miss_penalty;
+                mem_stall = pen;
+            }
         }
 
         if (stall) {
@@ -265,23 +291,29 @@ PipeStats pipe_run(Memory *mem, PipeConfig cfg) {
             } else if (fetch_stall > 0) {
                 IF = -1; fetch_stall--; st.mem_stalls++;
             } else if (pending_fetch >= 0) {
-                IF = (int)pending_fetch; pending_fetch = -1;
-                if (trace[IF].is_control || trace[IF].taken_control)
-                    ctrl_pending = control_penalty(&bp, cfg.bp, &trace[IF], &st);
-            } else if (next < n) {
-                int k = (int)next++;
-                if (cfg.icache.enabled && !cache_access(&ic, trace[k].pc)) {
+                IF = pending_fetch; pending_fetch = -1;
+                const InstInfo *d = gen_at(&g, IF);
+                if (d->is_control || d->taken_control)
+                    ctrl_pending = control_penalty(&bp, cfg.bp, d, &st);
+            } else if (gen_ensure(&g, next)) {
+                long k = next++;
+                const InstInfo *d = gen_at(&g, k);
+                if (cfg.icache.enabled && !cache_access(&ic, d->pc)) {
+                    long pen = cfg.icache.miss_penalty;
+                    if (cfg.l2.enabled)
+                        pen = cache_access(&l2, d->pc) ? cfg.l2.hit_latency
+                                                       : cfg.l2.miss_penalty;
                     pending_fetch = k;
-                    fetch_stall = cfg.icache.miss_penalty - 1;
+                    fetch_stall = pen - 1;
                     IF = -1;
                     st.mem_stalls++;
                 } else {
                     IF = k;
-                    if (trace[IF].is_control || trace[IF].taken_control)
-                        ctrl_pending = control_penalty(&bp, cfg.bp, &trace[IF], &st);
+                    if (d->is_control || d->taken_control)
+                        ctrl_pending = control_penalty(&bp, cfg.bp, d, &st);
                 }
             } else {
-                IF = -1;
+                IF = -1;     /* generation exhausted */
             }
         }
 
@@ -289,9 +321,18 @@ PipeStats pipe_run(Memory *mem, PipeConfig cfg) {
         if (cycles > bound) break;     /* safety net */
     }
 
+    cpu_silent = prev_silent;
+
+    st.instructions = (uint64_t)g.count;
     st.cycles = cycles;
     st.data_stalls = data_stalls;
     st.control_stalls = control_stalls;
+
+    for (int i = 0; i < NUM_REGS; i++) st.regs[i] = g.cpu.regs[i];
+    st.pc = g.cpu.pc;
+    st.sp = g.cpu.sp;
+    st.fz = g.cpu.flags.z; st.fc = g.cpu.flags.c;
+    st.fo = g.cpu.flags.o; st.fn = g.cpu.flags.n;
 
     if (cfg.icache.enabled) {
         st.icache_accesses = ic.accesses;
@@ -305,7 +346,171 @@ PipeStats pipe_run(Memory *mem, PipeConfig cfg) {
         st.dcache_amat = cache_amat(&dc);
         cache_free(&dc);
     }
+    if (cfg.l2.enabled) {
+        st.l2_accesses = l2.accesses;
+        st.l2_misses = l2.misses;
+        cache_free(&l2);
+    }
     if (cfg.bp != BP_NONE) bp_free(&bp);
-    free(trace);
+    return st;
+}
+
+/* Tomasulo-style out-of-order timing model.
+ *
+ * Instructions are processed in program order (dispatch order). Renaming is
+ * implicit: reg_ready[r] tracks the completion cycle of r's most recent
+ * producer, so only true (RAW) dependencies constrain execution. Execution
+ * starts when operands are ready (OoO) or, with in_order set, no earlier than
+ * the previous instruction's execution. A finite ROB bounds the window: an
+ * instruction cannot dispatch until the slot ROB entries older has committed.
+ * Dispatch and commit are in order, each up to `width` per cycle. */
+PipeStats pipe_run_ooo(Memory *mem, PipeConfig cfg, int width, int rob_size,
+                       int in_order) {
+    PipeStats st = {0};
+
+    int prev_silent = cpu_silent;
+    cpu_silent = 1;
+
+    Gen g;
+    gen_init(&g, mem);
+
+    BPredictor bp;
+    if (cfg.bp != BP_NONE) {
+        bp_init(&bp, cfg.bp,
+                cfg.bp_idx_bits ? cfg.bp_idx_bits : 10,
+                cfg.bp_ghist_bits ? cfg.bp_ghist_bits : 8);
+    }
+
+    long reg_ready[FLAG_REG + 1] = {0};
+    long *rob = calloc((size_t)rob_size, sizeof(long));
+    long disp_cycle = 1, com_cycle = 1;
+    int  disp_count = 0, com_count = 0;
+    long fetch_block = 0, last_exec = 0, last_commit = 0;
+
+    for (long i = 0; ; i++) {
+        if (!gen_ensure(&g, i)) break;
+        const InstInfo *d = gen_at(&g, i);
+
+        /* dispatch: in order, width/cycle, gated by a free ROB slot and branches */
+        long disp = (disp_count < width) ? disp_cycle : disp_cycle + 1;
+        if (disp < fetch_block) disp = fetch_block;
+        if (i >= rob_size) {
+            long slot_free = rob[i % rob_size] + 1;
+            if (disp < slot_free) disp = slot_free;
+        }
+        if (disp == disp_cycle && disp_count < width) disp_count++;
+        else { disp_cycle = disp; disp_count = 1; }
+
+        /* execute: when operands ready (OoO), or after the prior instr (in-order) */
+        long exec = disp;
+        for (int r = 0; r < d->nreads; r++)
+            if (reg_ready[d->reads[r]] > exec) exec = reg_ready[d->reads[r]];
+        if (in_order && exec < last_exec) exec = last_exec;
+        last_exec = exec;
+
+        long complete = exec + d->latency;
+        if (d->has_write)  reg_ready[d->write_reg] = complete;
+        if (d->sets_flags) reg_ready[FLAG_REG] = complete;
+
+        /* commit: in order, width/cycle, after completion */
+        long commit = (com_count < width) ? com_cycle : com_cycle + 1;
+        if (commit < complete) commit = complete;
+        if (commit == com_cycle && com_count < width) com_count++;
+        else { com_cycle = commit; com_count = 1; }
+        rob[i % rob_size] = commit;
+        last_commit = commit;
+
+        if (d->is_control || d->taken_control) {
+            long pen = control_penalty(&bp, cfg.bp, d, &st);
+            if (pen) fetch_block = exec + pen;
+        }
+    }
+
+    cpu_silent = prev_silent;
+
+    st.instructions = (uint64_t)g.count;
+    st.cycles = g.count ? (uint64_t)last_commit : 0;
+    for (int i = 0; i < NUM_REGS; i++) st.regs[i] = g.cpu.regs[i];
+    st.pc = g.cpu.pc;
+    st.sp = g.cpu.sp;
+    st.fz = g.cpu.flags.z; st.fc = g.cpu.flags.c;
+    st.fo = g.cpu.flags.o; st.fn = g.cpu.flags.n;
+
+    free(rob);
+    if (cfg.bp != BP_NONE) bp_free(&bp);
+    return st;
+}
+
+/* In-order superscalar timing via a per-register/flag ready-cycle scoreboard.
+ * Each instruction is assigned a fetch cycle `iff`; up to `width` instructions
+ * may share a cycle (a bundle). An instruction's EX happens at iff+2, so a
+ * source operand produced into ready[s] must satisfy iff+2 >= ready[s]. */
+PipeStats pipe_run_ss(Memory *mem, PipeConfig cfg, int width) {
+    PipeStats st = {0};
+
+    int prev_silent = cpu_silent;
+    cpu_silent = 1;
+
+    Gen g;
+    gen_init(&g, mem);
+
+    BPredictor bp;
+    if (cfg.bp != BP_NONE) {
+        bp_init(&bp, cfg.bp,
+                cfg.bp_idx_bits ? cfg.bp_idx_bits : 10,
+                cfg.bp_ghist_bits ? cfg.bp_ghist_bits : 8);
+    }
+
+    long ready[FLAG_REG + 1] = {0};
+    long cur_if = 0, last_if = 0, fetch_block = 0;
+    int  cur_count = 0;
+
+    for (long i = 0; ; i++) {
+        if (!gen_ensure(&g, i)) break;
+        const InstInfo *d = gen_at(&g, i);
+
+        long earliest;
+        if (i == 0)                  earliest = 1;
+        else if (cur_count < width)  earliest = cur_if;       /* same bundle */
+        else                         earliest = cur_if + 1;   /* next cycle */
+        if (earliest < fetch_block) earliest = fetch_block;
+
+        long iff = earliest;
+        for (int r = 0; r < d->nreads; r++) {
+            long need = ready[d->reads[r]] - 2;   /* operand must be ready by EX (iff+2) */
+            if (need > iff) iff = need;
+        }
+
+        if (iff == cur_if && cur_count < width) {
+            cur_count++;
+        } else {
+            cur_if = iff;
+            cur_count = 1;
+        }
+
+        if (d->has_write)
+            ready[d->write_reg] = cfg.forwarding ? (d->is_load ? iff + 4 : iff + 3)
+                                                 : iff + 5;
+        if (d->sets_flags)
+            ready[FLAG_REG] = cfg.forwarding ? iff + 3 : iff + 5;
+
+        if (d->is_control || d->taken_control) {
+            long pen = control_penalty(&bp, cfg.bp, d, &st);
+            if (pen) fetch_block = iff + 1 + pen;
+        }
+        last_if = iff;
+    }
+
+    cpu_silent = prev_silent;
+
+    st.instructions = (uint64_t)g.count;
+    st.cycles = g.count ? (uint64_t)(last_if + 4) : 0;
+    for (int i = 0; i < NUM_REGS; i++) st.regs[i] = g.cpu.regs[i];
+    st.pc = g.cpu.pc;
+    st.sp = g.cpu.sp;
+    st.fz = g.cpu.flags.z; st.fc = g.cpu.flags.c;
+    st.fo = g.cpu.flags.o; st.fn = g.cpu.flags.n;
+
+    if (cfg.bp != BP_NONE) bp_free(&bp);
     return st;
 }

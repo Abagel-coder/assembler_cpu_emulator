@@ -14,6 +14,7 @@ typedef struct {
     int         bp_ghist_bits;
     CacheConfig icache;
     CacheConfig dcache;
+    CacheConfig l2;       /* unified L2 behind both L1s; miss_penalty = memory latency */
 } PipeConfig;
 
 typedef struct {
@@ -28,6 +29,7 @@ typedef struct {
 
     uint64_t icache_accesses, icache_misses;
     uint64_t dcache_accesses, dcache_misses;
+    uint64_t l2_accesses, l2_misses;
     double   icache_amat, dcache_amat;
 
     /* final architectural state, for oracle comparison */
@@ -37,5 +39,16 @@ typedef struct {
 } PipeStats;
 
 PipeStats pipe_run(Memory *mem, PipeConfig cfg);
+
+/* In-order superscalar issue model (width lanes/cycle). width=1 reproduces the
+ * scalar pipeline. Models data hazards, forwarding, and branch penalties; does
+ * not model caches. */
+PipeStats pipe_run_ss(Memory *mem, PipeConfig cfg, int width);
+
+/* Tomasulo-style dynamic scheduling: in-order dispatch/commit, out-of-order
+ * execute, register renaming (true deps only), a finite reorder buffer, and
+ * multi-cycle functional-unit latencies. Set in_order=1 for an otherwise
+ * identical in-order baseline (isolates the benefit of OoO execution). */
+PipeStats pipe_run_ooo(Memory *mem, PipeConfig cfg, int width, int rob, int in_order);
 
 #endif /* PIPE_SIM_H */

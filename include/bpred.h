@@ -9,7 +9,8 @@ typedef enum {
     BP_BIMODAL1,    /* 1-bit counters */
     BP_BIMODAL2,    /* 2-bit saturating counters */
     BP_GSHARE,      /* global history XOR pc index, 2-bit counters */
-    BP_TOURNAMENT   /* chooser selects between bimodal-2bit and gshare */
+    BP_TOURNAMENT,  /* chooser selects between bimodal-2bit and gshare */
+    BP_TOURNAMENT3  /* 3-way chooser over static / bimodal / gshare */
 } BpKind;
 
 typedef struct {

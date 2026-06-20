@@ -11,7 +11,7 @@ trap 'rm -rf "$TMP"' EXIT
 mkdir -p "$OUT"
 
 PROGS="factorial fibonacci bubble_sort nested_loops gcd recursive streaming"
-PREDICTORS="static 1bit 2bit gshare tournament"
+PREDICTORS="static 1bit 2bit gshare tournament tournament3"
 
 for p in $PROGS; do
     $ASM examples/$p.asm -o "$TMP/$p.bin"

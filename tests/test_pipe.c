@@ -81,6 +81,22 @@ static PipeStats run_bp(const char *asmf, BpKind kind) {
     return pipe_run(&m, (PipeConfig){ .forwarding = 1, .bp = kind });
 }
 
+static PipeStats run_ss_t(const char *asmf, BpKind kind, int w) {
+    const char *bin = "/tmp/pipe_test.bin";
+    assemble(asmf, bin);
+    Memory m;
+    load_bin(&m, bin);
+    return pipe_run_ss(&m, (PipeConfig){ .forwarding = 1, .bp = kind }, w);
+}
+
+static PipeStats run_ooo_t(const char *asmf, int w, int rob, int io) {
+    const char *bin = "/tmp/pipe_test.bin";
+    assemble(asmf, bin);
+    Memory m;
+    load_bin(&m, bin);
+    return pipe_run_ooo(&m, (PipeConfig){ .bp = BP_BIMODAL2 }, w, rob, io);
+}
+
 /* A dynamic predictor must beat static-not-taken on loop-heavy code, and
  * BP_NONE must leave the baseline cycle counts unchanged. */
 static void check_predictors(const char *asmf) {
@@ -142,6 +158,88 @@ static void check_cache_pipeline(const char *asmf) {
     CHECK(cached.cycles > base.cycles);                    /* misses cost cycles */
 }
 
+/* Unified L2: every L1 miss probes it, and it catches a working set that spills
+ * L1, cutting memory stalls and cycles vs an L1-only hierarchy. */
+static void check_l2(void) {
+    const char *bin = "/tmp/pipe_test.bin";
+    assemble("examples/streaming.asm", bin);
+    Memory m1, m2;
+    load_bin(&m1, bin);
+    load_bin(&m2, bin);
+    CacheConfig l1 = { .enabled = 1, .size_bytes = 1024, .block_bytes = 32, .assoc = 4,
+                       .repl = REPL_LRU, .hit_latency = 1, .miss_penalty = 100 };
+    CacheConfig l2 = { .enabled = 1, .size_bytes = 16384, .block_bytes = 64, .assoc = 8,
+                       .repl = REPL_LRU, .hit_latency = 10, .miss_penalty = 100 };
+    PipeStats a = pipe_run(&m1, (PipeConfig){ .forwarding = 1, .bp = BP_BIMODAL2,
+                                              .icache = l1, .dcache = l1 });
+    PipeStats b = pipe_run(&m2, (PipeConfig){ .forwarding = 1, .bp = BP_BIMODAL2,
+                                              .icache = l1, .dcache = l1, .l2 = l2 });
+    CHECK(b.l2_accesses == b.icache_misses + b.dcache_misses);  /* every L1 miss probes L2 */
+    CHECK(b.l2_misses <= b.l2_accesses);
+    CHECK(b.cycles < a.cycles);
+    CHECK(b.mem_stalls < a.mem_stalls);
+}
+
+/* Out-of-order: produces correct architectural state, never slower than the
+ * same-resource in-order baseline, and clearly wins when a long-latency op has
+ * independent work to overlap. */
+static void check_ooo(void) {
+    const char *bin = "/tmp/pipe_test.bin";
+    assemble("examples/ooo.asm", bin);
+    Memory mref, moo;
+    load_bin(&mref, bin);
+    load_bin(&moo, bin);
+    CPU ref;
+    cpu_init(&ref, &mref);
+    cpu_run(&ref, 0);
+    PipeStats oo = pipe_run_ooo(&moo, (PipeConfig){ .bp = BP_BIMODAL2 }, 2, 64, 0);
+    for (int i = 0; i < NUM_REGS; i++) CHECK(oo.regs[i] == ref.regs[i]);
+    CHECK(oo.pc == ref.pc && oo.sp == ref.sp);
+    CHECK(memcmp(mref.bytes, moo.bytes, MEM_SIZE) == 0);
+
+    const char *progs[] = { "examples/factorial.asm", "examples/streaming.asm",
+                            "examples/ooo.asm" };
+    for (size_t i = 0; i < sizeof progs / sizeof progs[0]; i++)
+        CHECK(run_ooo_t(progs[i], 2, 64, 0).cycles
+              <= run_ooo_t(progs[i], 2, 64, 1).cycles);
+
+    /* independent work behind a long-latency DIV -> OoO well over 2x */
+    CHECK(run_ooo_t("examples/ooo.asm", 2, 64, 0).cycles * 2
+          < run_ooo_t("examples/ooo.asm", 2, 64, 1).cycles);
+}
+
+/* Superscalar: width 1 must reproduce the scalar pipeline with the same
+ * predictor; wider issue is never slower; and ILP yields a real speedup. */
+static void check_superscalar(void) {
+    const char *progs[] = { "examples/factorial.asm", "examples/fibonacci.asm",
+                            "examples/bubble_sort.asm", "examples/nested_loops.asm",
+                            "examples/streaming.asm" };
+    for (size_t i = 0; i < sizeof progs / sizeof progs[0]; i++) {
+        PipeStats sc = run_bp(progs[i], BP_BIMODAL2);
+        PipeStats w1 = run_ss_t(progs[i], BP_BIMODAL2, 1);
+        PipeStats w2 = run_ss_t(progs[i], BP_BIMODAL2, 2);
+        CHECK(w1.cycles == sc.cycles);     /* width 1 == scalar pipeline */
+        CHECK(w2.cycles <= w1.cycles);     /* wider is never slower */
+        CHECK(w1.instructions == sc.instructions);
+    }
+    /* streaming has independent address/counter chains -> measurable ILP */
+    CHECK(run_ss_t("examples/streaming.asm", BP_BIMODAL2, 2).cycles
+          < run_ss_t("examples/streaming.asm", BP_BIMODAL2, 1).cycles);
+}
+
+/* The 3-way tournament (static fallback) recovers mostly-not-taken tiny kernels
+ * relative to the 2-way tournament, while still beating naive static on loops. */
+static void check_static_fallback(void) {
+    CHECK(run_bp("examples/gcd.asm", BP_TOURNAMENT3).branch_mispredicts
+          <= run_bp("examples/gcd.asm", BP_TOURNAMENT).branch_mispredicts);
+    CHECK(run_bp("examples/recursive.asm", BP_TOURNAMENT3).branch_mispredicts
+          <= run_bp("examples/recursive.asm", BP_TOURNAMENT).branch_mispredicts);
+    CHECK(run_bp("examples/recursive.asm", BP_TOURNAMENT3).branch_mispredicts
+          <= run_bp("examples/recursive.asm", BP_STATIC_NT).branch_mispredicts);
+    CHECK(run_bp("examples/nested_loops.asm", BP_TOURNAMENT3).branch_mispredicts
+          < run_bp("examples/nested_loops.asm", BP_STATIC_NT).branch_mispredicts);
+}
+
 /* On correlated branches (a short fixed inner loop) the textbook ordering holds:
  * gshare > 2-bit > 1-bit > static-NT. */
 static void check_correlation_ordering(void) {
@@ -185,10 +283,14 @@ int main(void) {
     check_predictors("examples/bubble_sort.asm");
 
     check_correlation_ordering();
+    check_superscalar();
+    check_ooo();
+    check_oracle("examples/ooo.asm");
 
     check_tournament("examples/nested_loops.asm");
     check_tournament("examples/bubble_sort.asm");
     check_tournament("examples/gcd.asm");
+    check_static_fallback();
     /* on correlated code the tournament chooser must follow the gshare half */
     {
         PipeStats b2 = run_bp("examples/nested_loops.asm", BP_BIMODAL2);
@@ -199,6 +301,7 @@ int main(void) {
     check_cache_unit();
     check_cache_pipeline("examples/bubble_sort.asm");
     check_cache_pipeline("examples/fibonacci.asm");
+    check_l2();
 
     if (failures == 0) {
         printf("all pipeline tests passed\n");

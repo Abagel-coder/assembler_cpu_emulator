@@ -24,11 +24,18 @@ void bp_init(BPredictor *bp, BpKind kind, int idx_bits, int ghist_bits) {
                    ? 0 : 2;
     memset(bp->table, init, entries);
 
-    if (kind == BP_TOURNAMENT) {
+    if (kind == BP_TOURNAMENT || kind == BP_TOURNAMENT3) {
         bp->gtable = malloc(entries);
         memset(bp->gtable, 2, entries);
-        bp->chooser = malloc(entries);
-        memset(bp->chooser, 1, entries);   /* weakly prefer the bimodal half */
+        /* 2-way: one chooser counter per index; 3-way: three (static/bimodal/gshare) */
+        size_t ch = (kind == BP_TOURNAMENT3) ? entries * 3 : entries;
+        bp->chooser = malloc(ch);
+        memset(bp->chooser, 1, ch);
+        if (kind == BP_TOURNAMENT3) {
+            /* start by preferring static (needs no warmup); dynamic predictors
+             * take over once they out-score it */
+            for (size_t i = 0; i < entries; i++) bp->chooser[i * 3] = 2;
+        }
     }
 
     bp->btb_bits = idx_bits;
@@ -85,6 +92,14 @@ int bp_predict(const BPredictor *bp, uint32_t pc) {
         case BP_TOURNAMENT:
             return tournament_use_gshare(bp) ? gshare_pred(bp, pc)
                                              : bimodal_pred(bp, pc);
+        case BP_TOURNAMENT3: {
+            uint32_t base = bimodal_idx(bp, pc) * 3;
+            uint8_t cs = bp->chooser[base], cb = bp->chooser[base + 1],
+                    cg = bp->chooser[base + 2];
+            if (cg >= cb && cg >= cs) return gshare_pred(bp, pc);
+            if (cb >= cs)             return bimodal_pred(bp, pc);
+            return 0;   /* static not-taken */
+        }
     }
     return 0;
 }
@@ -111,6 +126,16 @@ void bp_update(BPredictor *bp, uint32_t pc, int taken) {
                 uint32_t ci = ghist_val(bp) & bp->mask;
                 sat_update(&bp->chooser[ci], gc);   /* toward whichever was right */
             }
+            sat_update(&bp->table[bimodal_idx(bp, pc)], taken);
+            sat_update(&bp->gtable[gshare_idx(bp, pc)], taken);
+            bp->ghist = (bp->ghist << 1) | (taken ? 1u : 0u);
+            break;
+        }
+        case BP_TOURNAMENT3: {
+            uint32_t base = bimodal_idx(bp, pc) * 3;
+            sat_update(&bp->chooser[base],     0 == taken);
+            sat_update(&bp->chooser[base + 1], bimodal_pred(bp, pc) == taken);
+            sat_update(&bp->chooser[base + 2], gshare_pred(bp, pc) == taken);
             sat_update(&bp->table[bimodal_idx(bp, pc)], taken);
             sat_update(&bp->gtable[gshare_idx(bp, pc)], taken);
             bp->ghist = (bp->ghist << 1) | (taken ? 1u : 0u);
@@ -143,6 +168,7 @@ const char *bp_name(BpKind kind) {
         case BP_BIMODAL2:   return "bimodal-2bit";
         case BP_GSHARE:     return "gshare";
         case BP_TOURNAMENT: return "tournament";
+        case BP_TOURNAMENT3: return "tour+static";
     }
     return "?";
 }
