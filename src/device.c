@@ -16,9 +16,10 @@ uint32_t mmio_load(uint32_t addr) {
 }
 
 void mmio_store(CPU *cpu, uint32_t addr, uint32_t value) {
+    char b[16];
     switch (addr) {
-        case MMIO_OUT:  if (!cpu_silent) printf("%u\n", value); break;
-        case MMIO_OUTC: if (!cpu_silent) putchar((int)(value & 0xFF)); break;
+        case MMIO_OUT:  if (!cpu_silent) { snprintf(b, sizeof b, "%u\n", value); cpu_emit(b); } break;
+        case MMIO_OUTC: if (!cpu_silent) { b[0] = (char)(value & 0xFF); b[1] = '\0'; cpu_emit(b); } break;
         case MMIO_HALT: cpu->halted = 1; break;   /* control effect: never suppressed */
         default: break;
     }

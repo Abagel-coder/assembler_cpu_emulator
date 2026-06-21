@@ -3,8 +3,25 @@
 #include "device.h"
 
 #include <stdio.h>
+#include <string.h>
 
 int cpu_silent = 0;
+
+int cpu_capture = 0;
+static char cap_buf[8192];
+static size_t cap_len = 0;
+
+void cpu_capture_reset(void) { cap_len = 0; cap_buf[0] = '\0'; }
+const char *cpu_capture_buf(void) { return cap_buf; }
+
+void cpu_emit(const char *s) {
+    if (!cpu_capture) { fputs(s, stdout); return; }
+    size_t n = strlen(s);
+    if (cap_len + n >= sizeof cap_buf) cpu_capture_reset();   /* overflow: start over */
+    memcpy(cap_buf + cap_len, s, n);
+    cap_len += n;
+    cap_buf[cap_len] = '\0';
+}
 
 void cpu_init(CPU *cpu, Memory *mem) {
     for (int i = 0; i < NUM_REGS; i++) {
@@ -185,7 +202,11 @@ void cpu_step(CPU *cpu) {
             break;
         }
         case OP_OUT:
-            if (!cpu_silent) printf("%u\n", cpu->regs[ins.rdest]);
+            if (!cpu_silent) {
+                char b[16];
+                snprintf(b, sizeof b, "%u\n", cpu->regs[ins.rdest]);
+                cpu_emit(b);
+            }
             break;
 
         default:

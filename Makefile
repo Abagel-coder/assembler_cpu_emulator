@@ -9,9 +9,12 @@ ASM_SRC  := src/lexer.c src/parser.c src/encoder.c src/isa.c
 
 .PHONY: all test clean
 
-all: $(BUILD)/emu $(BUILD)/asm $(BUILD)/disasm $(BUILD)/pipe
+all: $(BUILD)/emu $(BUILD)/asm $(BUILD)/disasm $(BUILD)/pipe $(BUILD)/dbg
 
 $(BUILD)/emu: src/main_emu.c $(CORE_SRC) | $(BUILD)
+	$(CC) $(CFLAGS) $^ -o $@
+
+$(BUILD)/dbg: src/main_dbg.c $(CORE_SRC) | $(BUILD)
 	$(CC) $(CFLAGS) $^ -o $@
 
 $(BUILD)/asm: src/main_asm.c $(ASM_SRC) | $(BUILD)
@@ -27,12 +30,13 @@ $(BUILD):
 	mkdir -p $(BUILD)
 
 test: $(BUILD)/test_cpu_core $(BUILD)/test_assembler $(BUILD)/test_integration \
-      $(BUILD)/test_pipe $(BUILD)/asm $(BUILD)/disasm
+      $(BUILD)/test_pipe $(BUILD)/asm $(BUILD)/disasm $(BUILD)/dbg
 	./$(BUILD)/test_cpu_core
 	./$(BUILD)/test_assembler
 	./$(BUILD)/test_integration
 	./$(BUILD)/test_pipe
 	sh tests/roundtrip.sh
+	sh tests/dbg_test.sh
 
 $(BUILD)/test_cpu_core: tests/test_cpu_core.c $(CORE_SRC) | $(BUILD)
 	$(CC) $(CFLAGS) $^ -o $@

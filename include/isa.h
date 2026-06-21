@@ -9,6 +9,7 @@
 #define ISA_H
 
 #include <stdint.h>
+#include <stddef.h>
 
 typedef enum {
     OP_NOP = 0x00, OP_HALT,
@@ -57,5 +58,8 @@ typedef enum {
 
 const char *opcode_name(Opcode op);
 OpFormat    opcode_format(Opcode op);
+
+/* Format an encoded instruction word as "MNEM operands" into buf. */
+void        isa_disasm(char *buf, size_t n, uint32_t word);
 
 #endif /* ISA_H */

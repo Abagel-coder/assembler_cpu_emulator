@@ -8,6 +8,10 @@ tools consume it:
 - **`asm`** — two-pass assembler (labels, directives, error checking)
 - **`emu`** — functional emulator with trace mode and instruction-throughput stats
 - **`disasm`** — disassembler (binary → assembly, round-trip verified)
+- **`dbg`** — interactive step debugger with a full-screen terminal dashboard
+  (live registers/flags, disassembly around PC, memory, and program output) and
+  single-key step/continue/breakpoint controls; falls back to a line REPL when
+  input is piped
 - **`pipe`** — microarchitecture simulator: a structural 5-stage pipeline with
   hazard detection, forwarding, static/bimodal/gshare predictors with 2- and
   3-way tournament choosers, a configurable cache hierarchy, in-order superscalar
@@ -33,6 +37,7 @@ make test     # CPU, assembler, integration, pipeline, and round-trip suites
 ./build/asm examples/bubble_sort.asm -o bs.bin
 ./build/emu --stats bs.bin                  # run; print instruction count + MIPS
 ./build/disasm bs.bin                        # annotated disassembly
+./build/dbg bs.bin                           # interactive step debugger
 ./build/pipe bs.bin                          # full pipeline/predictor/cache report
 ./build/pipe --predictor gshare --l1d 2048:4:32 bs.bin --csv   # one configured run
 ```
@@ -218,10 +223,11 @@ include/   isa.h cpu.h memory.h device.h assembler.h bpred.h cache.h pipe_sim.h
 src/       cpu.c memory.c isa.c device.c        # emulator core + MMIO devices
            lexer.c parser.c encoder.c          # assembler (two-pass)
            bpred.c cache.c pipe_sim.c          # microarchitecture model
-           main_emu.c main_asm.c disasm.c main_pipe.c
+           main_emu.c main_asm.c disasm.c main_pipe.c main_dbg.c
 examples/  factorial fibonacci bubble_sort nested_loops gcd recursive
            streaming ooo mmio
-tests/     test_cpu_core test_assembler test_integration test_pipe roundtrip.sh
+tests/     test_cpu_core test_assembler test_integration test_pipe
+           roundtrip.sh dbg_test.sh
 tools/     run_suite.sh (CSV sweeps)  plot.py (SVG charts)
 ```
 
