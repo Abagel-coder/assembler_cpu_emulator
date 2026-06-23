@@ -46,3 +46,17 @@ if echo "$out" | grep -q '^55$'; then
 else
     echo "cc FAIL fib.c:"; echo "$out"; exit 1
 fi
+
+out=$(run examples/pointers.c)
+if echo "$out" | grep -q '^15$'; then
+    echo "cc OK: pointers.c -> 15 (globals, array decay, pointer param)"
+else
+    echo "cc FAIL pointers.c:"; echo "$out"; exit 1
+fi
+
+out=$(run examples/arrays.c)
+if echo "$out" | grep -q '^149$' && echo "$out" | grep -q 'R0 = 149'; then
+    echo "cc OK: arrays.c -> 149 (local array, &elem, *p)"
+else
+    echo "cc FAIL arrays.c:"; echo "$out"; exit 1
+fi

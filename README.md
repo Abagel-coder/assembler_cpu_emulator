@@ -1,10 +1,11 @@
 # Custom ISA — Assembler, Emulator & Microarchitecture Simulator
 
 A toolchain and cycle-accurate performance model for a custom 32-bit instruction
-set, written in C11 with no dependencies beyond libc (~1,900 lines of C, plus
-~600 of tests). You write assembly, the assembler produces a binary, and three
-tools consume it:
+set, written in C11 with no dependencies beyond libc. A C-subset compiler, an
+assembler, and an emulator form a source → assembly → binary → execution stack:
 
+- **`mcc`** — C-subset compiler (`int`, pointers, arrays, globals, functions,
+  recursion) emitting assembly; see [docs/COMPILER.md](docs/COMPILER.md)
 - **`asm`** — two-pass assembler (labels, directives, error checking)
 - **`emu`** — functional emulator with trace mode and instruction-throughput stats
 - **`disasm`** — disassembler (binary → assembly, round-trip verified)

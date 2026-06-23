@@ -44,6 +44,7 @@ test: $(BUILD)/test_cpu_core $(BUILD)/test_assembler $(BUILD)/test_integration \
 	sh tests/roundtrip.sh
 	sh tests/dbg_test.sh
 	sh tests/cc_test.sh
+	sh tests/cc_difftest.sh
 
 $(BUILD)/test_cpu_core: tests/test_cpu_core.c $(CORE_SRC) | $(BUILD)
 	$(CC) $(CFLAGS) $^ -o $@
