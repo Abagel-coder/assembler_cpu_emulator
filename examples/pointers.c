@@ -1,4 +1,4 @@
-/* M5: a global array passed (decayed to a pointer) into a function. */
+/* a global array passed (decayed to a pointer) into a function. */
 int g[5];
 
 int sum(int *p, int n) {

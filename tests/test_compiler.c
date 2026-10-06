@@ -1,4 +1,4 @@
-/* M1 tests: the front-end parses valid programs, rejects malformed ones, and
+/* Front-end tests: parses valid programs, rejects malformed ones, and
  * builds the expected AST (precedence, structure). */
 #include "compiler.h"
 
@@ -68,7 +68,7 @@ int main(void) {
     test_errors();
     test_precedence();
     test_assign();
-    if (failures == 0) { printf("all compiler (M1) tests passed\n"); return 0; }
+    if (failures == 0) { printf("all compiler tests passed\n"); return 0; }
     fprintf(stderr, "%d test(s) failed\n", failures);
     return 1;
 }

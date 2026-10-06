@@ -4,7 +4,7 @@
 #include <stdint.h>
 
 typedef enum {
-    BP_NONE,        /* fixed penalty on every taken control (Phase A baseline) */
+    BP_NONE,        /* fixed penalty on every taken control (baseline) */
     BP_STATIC_NT,   /* always predict not-taken */
     BP_BIMODAL1,    /* 1-bit counters */
     BP_BIMODAL2,    /* 2-bit saturating counters */

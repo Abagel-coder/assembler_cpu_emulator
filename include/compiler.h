@@ -1,4 +1,4 @@
-/* C-subset compiler front-end: tokens and AST (M1 = lex + parse + print). */
+/* C-subset compiler front-end: tokens and AST. */
 #ifndef COMPILER_H
 #define COMPILER_H
 
@@ -57,7 +57,7 @@ void   arena_free(void);
 const char *tok_name(int t);   /* operator/token spelling, for printing */
 
 /* Emit assembly for the program to `out`. Returns 0 on success, 1 on a codegen
- * error (message written to err). M2: a single straight-line main(). */
+ * error (message written to err). */
 int    codegen(const Node *root, FILE *out, char *err, size_t errcap);
 
 #endif /* COMPILER_H */

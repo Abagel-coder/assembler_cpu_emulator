@@ -199,7 +199,7 @@ static int needs_stall(const Gen *g, long id, long ex, long mem, int fwd) {
 }
 
 /* Decide the fetch penalty for a control instruction and update predictor/BTB.
- * BP_NONE reproduces the Phase A model: every taken control costs the penalty. */
+ * BP_NONE is the baseline: every taken control costs the penalty. */
 static long control_penalty(BPredictor *bp, BpKind kind, const InstInfo *d,
                             PipeStats *st) {
     if (kind == BP_NONE) {

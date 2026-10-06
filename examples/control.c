@@ -1,4 +1,4 @@
-/* M3: if/else, for, comparisons, and short-circuit logical operators. */
+/* if/else, for, comparisons, and short-circuit logical operators. */
 int main(void) {
     int s = 0;
     int i;

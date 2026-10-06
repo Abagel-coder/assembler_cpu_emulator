@@ -1,4 +1,4 @@
-/* M5: a local array, address-of an element, and a pointer write. */
+/* a local array, address-of an element, and a pointer write. */
 int main(void) {
     int a[4];
     int i;

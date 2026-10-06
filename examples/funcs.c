@@ -1,4 +1,4 @@
-/* M4: functions with parameters and nested calls. */
+/* functions with parameters and nested calls. */
 int sq(int x) {
     return x * x;
 }

@@ -1,4 +1,4 @@
-/* Code generator (through M6): functions/recursion, pointers/arrays/globals,
+/* Code generator: functions/recursion, pointers/arrays/globals,
  * plus direct scalar access and a peephole pass over the emitted assembly.
  *
  * Registers: R0 accumulator/return, R1 op-temp, R2/R3 scratch, R6 frame pointer,

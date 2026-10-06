@@ -1,5 +1,5 @@
 #!/bin/sh
-# End-to-end M2: compile C -> assembly -> binary -> run, check output.
+# End-to-end: compile C -> assembly -> binary -> run, check output.
 set -e
 B=build
 T=$(mktemp -d)

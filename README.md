@@ -5,7 +5,7 @@ set, written in C11 with no dependencies beyond libc. A C-subset compiler, an
 assembler, and an emulator form a source → assembly → binary → execution stack:
 
 - **`mcc`** — C-subset compiler (`int`, pointers, arrays, globals, functions,
-  recursion) emitting assembly; see [docs/COMPILER.md](docs/COMPILER.md)
+  recursion) emitting assembly; see [C compiler](#c-compiler)
 - **`asm`** — two-pass assembler (labels, directives, error checking)
 - **`emu`** — functional emulator with trace mode and instruction-throughput stats
 - **`disasm`** — disassembler (binary → assembly, round-trip verified)
@@ -41,6 +41,10 @@ make test     # CPU, assembler, integration, pipeline, compiler, debugger, and r
 ./build/dbg bs.bin                           # interactive step debugger
 ./build/pipe bs.bin                          # full pipeline/predictor/cache report
 ./build/pipe --predictor gshare --l1d 2048:4:32 bs.bin --csv   # one configured run
+
+./build/mcc examples/fib.c -o fib.asm        # compile C to assembly
+./build/mcc --ast examples/fib.c             # print the parsed AST instead
+./build/asm fib.asm -o fib.bin && ./build/emu fib.bin
 ```
 
 ---
@@ -71,6 +75,46 @@ loop:                      ; label
 .org 256
 arr:    .word 42           ; data directive
 ```
+
+---
+
+## C compiler
+
+`mcc` compiles a C subset to assembly for this ISA; `asm` turns the output into a
+binary for `emu`, `pipe`, or `dbg`.
+
+- **Types:** `int` (32-bit), `int*`, `int[]`, `void` (return type only).
+- **Declarations:** globals (incl. arrays, constant initializers), functions with
+  parameters, locals (incl. arrays).
+- **Statements:** `if`/`else`, `while`, `for`, `return`, blocks, expressions.
+- **Expressions:** `+ - * / %`, comparisons, `&& || !` (short-circuit), bitwise
+  `& | ^ ~`, shifts `<< >>`, unary `-`, assignment, calls, `a[i]`, `*p`, `&x`.
+- **Built-ins:** `out(x)` prints an integer; `in()` reads one.
+- **Recursion** is supported.
+
+Not supported: structs, floats, `char`/strings, function pointers, `switch`,
+`goto`, the preprocessor, multiple source files.
+
+Code generation is stack-machine style and uses the ISA unmodified:
+
+- **Registers** — `R0` holds each expression's result and the return value; `R1`
+  is the operator temporary, `R2`/`R3` are scratch, `R6` is the frame pointer, and
+  `R7` is a software stack pointer. Temporaries go on the hardware `PUSH`/`POP`
+  stack.
+- **Calls** — the caller pushes arguments onto the `R7` stack, `CALL`s, then pops
+  them; the callee saves and sets the frame pointer, allocates locals, and
+  restores it before `RET`. Parameter *i* is at `[R6 + 4 + 4i]`, the saved caller
+  FP at `[R6]`, and locals below it. Return addresses stay on the hardware stack.
+  `main` is reached from an entry stub (`CALL main; HALT`).
+- **Memory** — globals are `.word` data after the code, addressed by label; array
+  and pointer accesses compute `base + index*4` and use word `LOAD`/`STORE`.
+- **Peephole** — store-to-load forwarding, adjacent `PUSH`/`POP` → `MOV`, and
+  no-op `MOV` removal.
+
+Tests cover the lexer and parser (valid programs, error cases, precedence,
+associativity), end-to-end runs of the example programs, and a differential test
+that compiles each example with both the host C compiler and `mcc` and requires
+identical output.
 
 ---
 
@@ -221,17 +265,16 @@ dependency chain does not allow.
 
 ```
 include/   isa.h cpu.h memory.h device.h assembler.h bpred.h cache.h pipe_sim.h
+           compiler.h
 src/       cpu.c memory.c isa.c device.c        # emulator core + MMIO devices
            lexer.c parser.c encoder.c          # assembler (two-pass)
+           clexer.c cparser.c cgen.c           # C compiler (lexer, parser, codegen)
            bpred.c cache.c pipe_sim.c          # microarchitecture model
-           main_emu.c main_asm.c disasm.c main_pipe.c main_dbg.c
+           main_emu.c main_asm.c disasm.c main_pipe.c main_dbg.c main_cc.c
 examples/  factorial fibonacci bubble_sort nested_loops gcd recursive
-           streaming ooo mmio
-tests/     test_cpu_core test_assembler test_integration test_pipe
-           roundtrip.sh dbg_test.sh
+           streaming ooo mmio                  # .asm
+           straight factorial control funcs fib pointers arrays   # .c
+tests/     test_cpu_core test_assembler test_integration test_pipe test_compiler
+           roundtrip.sh dbg_test.sh cc_test.sh cc_difftest.sh
 tools/     run_suite.sh (CSV sweeps)  plot.py (SVG charts)
 ```
-
-## Future work
-- Finite execution ports / load-store queue in the OoO model
-- Additional MMIO devices (timer, framebuffer) and interrupts

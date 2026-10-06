@@ -1,4 +1,4 @@
-/* test_cpu_core.c — exercise the Milestone 1 CPU core with hand-encoded
+/* test_cpu_core.c — exercise the CPU core with hand-encoded
  * instructions, asserting on final register and flag state. */
 #include "cpu.h"
 #include "isa.h"

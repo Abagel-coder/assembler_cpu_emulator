@@ -1,4 +1,4 @@
-/* M2: straight-line arithmetic (no control flow yet) compiled by mcc. */
+/* straight-line arithmetic (no control flow) compiled by mcc. */
 int main(void) {
     int a = 6;
     int b = 7;
