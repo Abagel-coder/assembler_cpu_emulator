@@ -28,8 +28,8 @@ assembler, and an emulator form a source → assembly → binary → execution s
 ## Build & test
 
 ```sh
-make          # builds asm, emu, disasm, pipe into build/
-make test     # CPU, assembler, integration, pipeline, and round-trip suites
+make          # builds mcc, asm, emu, disasm, dbg, pipe into build/
+make test     # CPU, assembler, integration, pipeline, compiler, debugger, and round-trip suites
 ```
 
 ## Quick start

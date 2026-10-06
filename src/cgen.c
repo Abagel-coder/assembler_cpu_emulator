@@ -376,7 +376,7 @@ static void peephole(void) {
             if (sscanf(body(cur), "MOV %15[^,], %15s", a, b) == 2 && !strcmp(a, b)) { free(cur); changed = 1; continue; }
             if (w > 0 && sscanf(body(out[w - 1]), "PUSH %15s", a) == 1 && sscanf(body(cur), "POP %15s", b) == 1) {
                 free(out[--w]); free(cur);
-                if (strcmp(a, b)) { char t[40]; snprintf(t, sizeof t, "        MOV %s, %s", b, a); out[w++] = sdup(t); }
+                if (strcmp(a, b)) { char t[64]; snprintf(t, sizeof t, "        MOV %s, %s", b, a); out[w++] = sdup(t); }
                 changed = 1; continue;
             }
             if (w > 0 && !is_target(out[w - 1]) && !is_target(cur) &&
